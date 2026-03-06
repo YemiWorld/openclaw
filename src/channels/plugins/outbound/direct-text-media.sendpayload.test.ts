@@ -48,6 +48,31 @@ describe("createDirectTextMediaOutbound sendPayload", () => {
     expect(result).toMatchObject({ channel: "imessage", messageId: "m1" });
   });
 
+  it("buffer-based attachment delegates to sendMedia with buffer", async () => {
+    const { outbound, sendFn } = makeOutbound();
+    const buffer = Buffer.from("test data").toString("base64");
+    const result = await outbound.sendPayload!(
+      baseCtx({
+        text: "buffer caption",
+        buffer,
+        contentType: "text/plain",
+        filename: "test.txt",
+      }),
+    );
+
+    expect(sendFn).toHaveBeenCalledTimes(1);
+    expect(sendFn).toHaveBeenCalledWith(
+      "user1",
+      "buffer caption",
+      expect.objectContaining({
+        buffer: expect.any(Buffer),
+        contentType: "text/plain",
+        filename: "test.txt",
+      }),
+    );
+    expect(result).toMatchObject({ channel: "imessage", messageId: "m1" });
+  });
+
   it("multi-media iterates URLs with caption on first", async () => {
     const sendFn = vi
       .fn()

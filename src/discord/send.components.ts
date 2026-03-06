@@ -51,6 +51,10 @@ type DiscordComponentSendOpts = {
   mediaUrl?: string;
   mediaLocalRoots?: readonly string[];
   filename?: string;
+  /** Base64-encoded buffer or Buffer for direct attachment upload. */
+  buffer?: Buffer | string;
+  /** MIME content type for buffer-based attachments. */
+  contentType?: string;
 };
 
 export async function sendDiscordComponentMessage(
@@ -93,16 +97,25 @@ export async function sendDiscordComponentMessage(
   }
   const expectedAttachmentName = uniqueAttachmentNames[0];
   let files: MessagePayloadFile[] | undefined;
-  if (opts.mediaUrl) {
-    const media = await loadWebMedia(opts.mediaUrl, { localRoots: opts.mediaLocalRoots });
-    const filenameOverride = opts.filename?.trim();
-    const fileName = filenameOverride || media.fileName || "upload";
+  if (opts.mediaUrl || opts.buffer) {
+    let fileName: string;
+    let fileData: Blob;
+    if (opts.buffer) {
+      const bufferData =
+        typeof opts.buffer === "string" ? Buffer.from(opts.buffer, "base64") : opts.buffer;
+      fileName = opts.filename?.trim() || "attachment";
+      fileData = toDiscordFileBlob(bufferData);
+    } else {
+      const media = await loadWebMedia(opts.mediaUrl!, { localRoots: opts.mediaLocalRoots });
+      const filenameOverride = opts.filename?.trim();
+      fileName = filenameOverride || media.fileName || "upload";
+      fileData = toDiscordFileBlob(media.buffer);
+    }
     if (expectedAttachmentName && expectedAttachmentName !== fileName) {
       throw new Error(
         `Component file block expects attachment "${expectedAttachmentName}", but the uploaded file is "${fileName}". Update components.blocks[].file or provide a matching filename.`,
       );
     }
-    const fileData = toDiscordFileBlob(media.buffer);
     files = [{ data: fileData, name: fileName }];
   } else if (expectedAttachmentName) {
     throw new Error(
@@ -134,7 +147,7 @@ export async function sendDiscordComponentMessage(
       channelId,
       rest,
       token,
-      hasMedia: Boolean(files?.length),
+      hasMedia: Boolean(files?.length || opts.buffer),
     });
   }
 

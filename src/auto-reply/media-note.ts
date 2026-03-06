@@ -1,4 +1,112 @@
+import fs from "node:fs/promises";
 import type { MsgContext } from "./templating.js";
+
+const TEXT_INLINE_CONTENT_TYPES = new Set([
+  "text/plain",
+  "text/csv",
+  "text/markdown",
+  "text/html",
+  "text/css",
+  "text/xml",
+  "text/javascript",
+  "application/json",
+  "application/xml",
+  "application/javascript",
+  "application/yaml",
+  "application/x-yaml",
+]);
+
+const TEXT_INLINE_EXTENSIONS = new Set([
+  ".txt",
+  ".csv",
+  ".md",
+  ".json",
+  ".xml",
+  ".yaml",
+  ".yml",
+  ".html",
+  ".css",
+  ".js",
+  ".ts",
+  ".jsx",
+  ".tsx",
+  ".py",
+  ".sh",
+  ".bash",
+  ".log",
+  ".ini",
+  ".toml",
+  ".cfg",
+  ".conf",
+  ".env",
+  ".sql",
+  ".graphql",
+  ".svg",
+]);
+
+/** Maximum chars to inline per text attachment. */
+const TEXT_INLINE_MAX_CHARS = 50_000;
+
+function isTextContentType(contentType?: string): boolean {
+  if (!contentType) {
+    return false;
+  }
+  const base = contentType.split(";")[0]?.trim().toLowerCase() ?? "";
+  return TEXT_INLINE_CONTENT_TYPES.has(base) || base.startsWith("text/");
+}
+
+function isTextExtension(filePath: string): boolean {
+  const ext = filePath.toLowerCase().match(/\.[^.]+$/)?.[0];
+  return ext ? TEXT_INLINE_EXTENSIONS.has(ext) : false;
+}
+
+/**
+ * For text-based inbound attachments, reads file content and returns inline
+ * blocks so agents see the actual text rather than just a file path.
+ */
+export async function inlineTextAttachments(ctx: MsgContext): Promise<string | undefined> {
+  const pathsFromArray = Array.isArray(ctx.MediaPaths) ? ctx.MediaPaths : undefined;
+  const paths =
+    pathsFromArray && pathsFromArray.length > 0
+      ? pathsFromArray
+      : ctx.MediaPath?.trim()
+        ? [ctx.MediaPath.trim()]
+        : [];
+  if (paths.length === 0) {
+    return undefined;
+  }
+
+  const types =
+    Array.isArray(ctx.MediaTypes) && ctx.MediaTypes.length === paths.length
+      ? ctx.MediaTypes
+      : undefined;
+
+  const blocks: string[] = [];
+  for (let i = 0; i < paths.length; i++) {
+    const filePath = paths[i] ?? "";
+    if (!filePath) {
+      continue;
+    }
+    const contentType = types?.[i] ?? ctx.MediaType;
+    if (!isTextContentType(contentType) && !isTextExtension(filePath)) {
+      continue;
+    }
+
+    try {
+      const content = await fs.readFile(filePath, "utf-8");
+      const trimmed =
+        content.length > TEXT_INLINE_MAX_CHARS
+          ? content.slice(0, TEXT_INLINE_MAX_CHARS) + "\n... (truncated)"
+          : content;
+      const filename = filePath.split(/[/\\]/).pop() ?? "file";
+      blocks.push(`[attached file: ${filename}]\n${trimmed}\n[/attached file]`);
+    } catch {
+      // File unreadable — fall through to normal media note path
+    }
+  }
+
+  return blocks.length > 0 ? blocks.join("\n\n") : undefined;
+}
 
 function formatMediaAttachedLine(params: {
   path: string;

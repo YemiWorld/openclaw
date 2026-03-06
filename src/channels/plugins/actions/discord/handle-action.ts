@@ -60,6 +60,10 @@ export async function handleDiscordMessageAction(
     const silent = params.silent === true;
     const sessionKey = readStringParam(params, "__sessionKey");
     const agentId = readStringParam(params, "__agentId");
+    // Extract buffer data for direct uploads
+    const buffer = readStringParam(params, "buffer", { trim: false });
+    const contentType =
+      readStringParam(params, "contentType") ?? readStringParam(params, "mimeType");
     return await handleDiscordAction(
       {
         action: "sendMessage",
@@ -75,6 +79,8 @@ export async function handleDiscordMessageAction(
         silent,
         __sessionKey: sessionKey ?? undefined,
         __agentId: agentId ?? undefined,
+        buffer: buffer ?? undefined,
+        contentType: contentType ?? undefined,
       },
       cfg,
       actionOptions,

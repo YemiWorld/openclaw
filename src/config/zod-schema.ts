@@ -404,6 +404,7 @@ export const OpenClawSchema = z
           })
           .strict()
           .optional(),
+        defaultClaudeModel: z.string().optional(),
       })
       .strict()
       .optional(),

@@ -84,4 +84,10 @@ export type ReplyPayload = {
   isReasoning?: boolean;
   /** Channel-specific payload data (per-channel envelope). */
   channelData?: Record<string, unknown>;
+  /** Base64-encoded buffer for direct attachment uploads (alternative to mediaUrl). */
+  buffer?: string;
+  /** MIME content type for buffer-based attachments. */
+  contentType?: string;
+  /** Filename for buffer-based attachments. */
+  filename?: string;
 };

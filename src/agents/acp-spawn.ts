@@ -43,6 +43,7 @@ export type SpawnAcpParams = {
   task: string;
   label?: string;
   agentId?: string;
+  model?: string;
   cwd?: string;
   mode?: SpawnAcpMode;
   thread?: boolean;
@@ -328,6 +329,7 @@ export async function spawnAcpDirect(
       mode: runtimeMode,
       cwd: params.cwd,
       backendId: cfg.acp?.backend,
+      model: params.model,
     });
     initializedRuntime = {
       runtime: initialized.runtime,

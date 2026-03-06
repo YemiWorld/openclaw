@@ -263,6 +263,10 @@ export async function handleDiscordMessagingAction(
         : undefined;
       const sessionKey = readStringParam(params, "__sessionKey");
       const agentId = readStringParam(params, "__agentId");
+      // Extract buffer data for direct uploads
+      const rawBuffer = readStringParam(params, "buffer", { trim: false });
+      const contentType =
+        readStringParam(params, "contentType") ?? readStringParam(params, "mimeType");
 
       if (componentSpec) {
         if (asVoice) {
@@ -283,6 +287,8 @@ export async function handleDiscordMessagingAction(
           agentId: agentId ?? undefined,
           mediaUrl: mediaUrl ?? undefined,
           filename: filename ?? undefined,
+          buffer: rawBuffer ?? undefined,
+          contentType: contentType ?? undefined,
         });
         return jsonResult({ ok: true, result, components: true });
       }
@@ -316,6 +322,9 @@ export async function handleDiscordMessagingAction(
         components,
         embeds,
         silent,
+        buffer: rawBuffer ?? undefined,
+        contentType: contentType ?? undefined,
+        filename: filename ?? undefined,
       });
       return jsonResult({ ok: true, result });
     }

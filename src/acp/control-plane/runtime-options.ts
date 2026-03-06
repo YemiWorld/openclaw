@@ -302,9 +302,6 @@ export function buildRuntimeConfigOptionPairs(
 ): Array<[string, string]> {
   const normalized = normalizeRuntimeOptions(options);
   const pairs = new Map<string, string>();
-  if (normalized.model) {
-    pairs.set("model", normalized.model);
-  }
   if (normalized.permissionProfile) {
     pairs.set("approval_policy", normalized.permissionProfile);
   }

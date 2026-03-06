@@ -116,6 +116,9 @@ export const discordOutbound: ChannelOutboundAdapter = {
     replyToId,
     threadId,
     silent,
+    buffer,
+    contentType,
+    filename,
   }) => {
     const send = deps?.sendDiscord ?? sendMessageDiscord;
     const target = resolveDiscordOutboundTarget({ to, threadId });
@@ -126,6 +129,9 @@ export const discordOutbound: ChannelOutboundAdapter = {
       replyTo: replyToId ?? undefined,
       accountId: accountId ?? undefined,
       silent: silent ?? undefined,
+      buffer,
+      contentType,
+      filename,
     });
     return { channel: "discord", ...result };
   },

@@ -426,6 +426,7 @@ export async function processDiscordMessage(ctx: DiscordMessagePreflightContext)
         error: err,
       });
     },
+    maxDurationMs: 0,
   });
 
   // --- Discord draft stream (edit-based preview streaming) ---

@@ -41,6 +41,29 @@ describe("discordOutbound sendPayload", () => {
     expect(result).toMatchObject({ channel: "discord" });
   });
 
+  it("buffer-based attachment delegates to sendMedia with buffer", async () => {
+    const buffer = Buffer.from("test data").toString("base64");
+    const ctx = baseCtx({
+      text: "buffer caption",
+      buffer,
+      contentType: "text/plain",
+      filename: "test.txt",
+    });
+    const result = await discordOutbound.sendPayload!(ctx);
+
+    expect(ctx.deps.sendDiscord).toHaveBeenCalledTimes(1);
+    expect(ctx.deps.sendDiscord).toHaveBeenCalledWith(
+      "channel:123456",
+      "buffer caption",
+      expect.objectContaining({
+        buffer: expect.any(Buffer),
+        contentType: "text/plain",
+        filename: "test.txt",
+      }),
+    );
+    expect(result).toMatchObject({ channel: "discord" });
+  });
+
   it("multi-media iterates URLs with caption on first", async () => {
     const sendDiscord = vi
       .fn()

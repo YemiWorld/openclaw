@@ -475,6 +475,74 @@ async function sendDiscordMedia(
   return res;
 }
 
+async function sendDiscordMediaBuffer(
+  rest: RequestClient,
+  channelId: string,
+  text: string,
+  buffer: Buffer,
+  contentType: string | undefined,
+  filename: string | undefined,
+  replyTo: string | undefined,
+  request: DiscordRequest,
+  maxLinesPerMessage?: number,
+  components?: DiscordSendComponents,
+  embeds?: DiscordSendEmbeds,
+  chunkMode?: ChunkMode,
+  silent?: boolean,
+) {
+  const chunks = text ? buildDiscordTextChunks(text, { maxLinesPerMessage, chunkMode }) : [];
+  const caption = chunks[0] ?? "";
+  const messageReference = replyTo ? { message_id: replyTo, fail_if_not_exists: false } : undefined;
+  const flags = silent ? SUPPRESS_NOTIFICATIONS_FLAG : undefined;
+  const fileData = toDiscordFileBlob(buffer);
+  const captionComponents = resolveDiscordSendComponents({
+    components,
+    text: caption,
+    isFirst: true,
+  });
+  const captionEmbeds = resolveDiscordSendEmbeds({ embeds, isFirst: true });
+  const payload = buildDiscordMessagePayload({
+    text: caption,
+    components: captionComponents,
+    embeds: captionEmbeds,
+    flags,
+    files: [
+      {
+        data: fileData,
+        name: filename ?? "attachment",
+      },
+    ],
+  });
+  const res = (await request(
+    () =>
+      rest.post(Routes.channelMessages(channelId), {
+        body: stripUndefinedFields({
+          ...serializePayload(payload),
+          ...(messageReference ? { message_reference: messageReference } : {}),
+        }),
+      }) as Promise<{ id: string; channel_id: string }>,
+    "media-buffer",
+  )) as { id: string; channel_id: string };
+  for (const chunk of chunks.slice(1)) {
+    if (!chunk.trim()) {
+      continue;
+    }
+    await sendDiscordText(
+      rest,
+      channelId,
+      chunk,
+      replyTo,
+      request,
+      maxLinesPerMessage,
+      undefined,
+      undefined,
+      chunkMode,
+      silent,
+    );
+  }
+  return res;
+}
+
 function buildReactionIdentifier(emoji: { id?: string | null; name?: string | null }) {
   if (emoji.id && emoji.name) {
     return `${emoji.name}:${emoji.id}`;
@@ -499,5 +567,6 @@ export {
   resolveChannelId,
   resolveDiscordRest,
   sendDiscordMedia,
+  sendDiscordMediaBuffer,
   sendDiscordText,
 };

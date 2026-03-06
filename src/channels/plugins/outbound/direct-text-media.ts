@@ -10,6 +10,9 @@ type DirectSendOptions = {
   mediaUrl?: string;
   mediaLocalRoots?: readonly string[];
   maxBytes?: number;
+  buffer?: Buffer | string;
+  contentType?: string;
+  filename?: string;
 };
 
 type DirectSendResult = { messageId: string; [key: string]: unknown };
@@ -38,8 +41,29 @@ export async function sendTextMediaPayload(params: {
     : params.ctx.payload.mediaUrl
       ? [params.ctx.payload.mediaUrl]
       : [];
-  if (!text && urls.length === 0) {
+  // Check for buffer-based attachment (buffer + contentType + filename)
+  const buffer = params.ctx.payload.buffer;
+  const contentType = params.ctx.payload.contentType;
+  const filename = params.ctx.payload.filename;
+  const hasBuffer =
+    typeof buffer === "string" &&
+    buffer.length > 0 &&
+    typeof contentType === "string" &&
+    contentType.length > 0;
+  if (!text && urls.length === 0 && !hasBuffer) {
     return { channel: params.channel, messageId: "" };
+  }
+  // Handle buffer-based media upload if available
+  if (hasBuffer) {
+    const bufferData = Buffer.from(buffer, "base64");
+    return await params.adapter.sendMedia!({
+      ...params.ctx,
+      text,
+      mediaUrl: "", // Empty since we're using buffer
+      buffer: bufferData,
+      contentType,
+      filename: filename ?? "attachment",
+    });
   }
   if (urls.length > 0) {
     let lastResult = await params.adapter.sendMedia!({
@@ -110,6 +134,9 @@ export function createDirectTextMediaOutbound<
     replyToId?: string | null;
     mediaUrl?: string;
     mediaLocalRoots?: readonly string[];
+    buffer?: Buffer | string;
+    contentType?: string;
+    filename?: string;
     buildOptions: (params: DirectSendOptions) => TOpts;
   }) => {
     const send = params.resolveSender(sendParams.deps);
@@ -126,6 +153,9 @@ export function createDirectTextMediaOutbound<
         accountId: sendParams.accountId,
         replyToId: sendParams.replyToId,
         maxBytes,
+        buffer: sendParams.buffer,
+        contentType: sendParams.contentType,
+        filename: sendParams.filename,
       }),
     );
     return { channel: params.channel, ...result };
@@ -149,7 +179,19 @@ export function createDirectTextMediaOutbound<
         buildOptions: params.buildTextOptions,
       });
     },
-    sendMedia: async ({ cfg, to, text, mediaUrl, mediaLocalRoots, accountId, deps, replyToId }) => {
+    sendMedia: async ({
+      cfg,
+      to,
+      text,
+      mediaUrl,
+      mediaLocalRoots,
+      accountId,
+      deps,
+      replyToId,
+      buffer,
+      contentType,
+      filename,
+    }) => {
       return await sendDirect({
         cfg,
         to,
@@ -159,6 +201,9 @@ export function createDirectTextMediaOutbound<
         accountId,
         deps,
         replyToId,
+        buffer,
+        contentType,
+        filename,
         buildOptions: params.buildMediaOptions,
       });
     },

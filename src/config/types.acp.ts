@@ -45,4 +45,6 @@ export type AcpConfig = {
   maxConcurrentSessions?: number;
   stream?: AcpStreamConfig;
   runtime?: AcpRuntimeConfig;
+  /** Default Claude model for ACP sessions (e.g. "claude-sonnet-4-6", "claude-opus-4-6"). */
+  defaultClaudeModel?: string;
 };

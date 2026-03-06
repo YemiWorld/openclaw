@@ -131,6 +131,7 @@ export function createSessionsSpawnTool(opts?: {
             task,
             label: label || undefined,
             agentId: requestedAgentId,
+            model: modelOverride,
             cwd,
             mode: mode && ACP_SPAWN_MODES.includes(mode) ? mode : undefined,
             thread,

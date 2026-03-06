@@ -29,6 +29,7 @@ import {
   resolveDiscordSendComponents,
   resolveDiscordSendEmbeds,
   sendDiscordMedia,
+  sendDiscordMediaBuffer,
   sendDiscordText,
   stripUndefinedFields,
   SUPPRESS_NOTIFICATIONS_FLAG,
@@ -54,6 +55,12 @@ type DiscordSendOpts = {
   components?: DiscordSendComponents;
   embeds?: DiscordSendEmbeds;
   silent?: boolean;
+  /** Base64-encoded buffer or Buffer for direct attachment upload. */
+  buffer?: Buffer | string;
+  /** MIME content type for buffer-based attachments. */
+  contentType?: string;
+  /** Filename for buffer-based attachments. */
+  filename?: string;
 };
 
 type DiscordClientRequest = ReturnType<typeof createDiscordClient>["request"];
@@ -198,22 +205,43 @@ export async function sendMessageDiscord(
     const remainingChunks = chunks.slice(1);
 
     try {
-      if (opts.mediaUrl) {
+      if (opts.mediaUrl || opts.buffer) {
         const [mediaCaption, ...afterMediaChunks] = remainingChunks;
-        await sendDiscordMedia(
-          rest,
-          threadId,
-          mediaCaption ?? "",
-          opts.mediaUrl,
-          opts.mediaLocalRoots,
-          undefined,
-          request,
-          accountInfo.config.maxLinesPerMessage,
-          undefined,
-          undefined,
-          chunkMode,
-          opts.silent,
-        );
+        if (opts.buffer) {
+          // Handle buffer-based upload
+          const bufferData =
+            typeof opts.buffer === "string" ? Buffer.from(opts.buffer, "base64") : opts.buffer;
+          await sendDiscordMediaBuffer(
+            rest,
+            threadId,
+            mediaCaption ?? "",
+            bufferData,
+            opts.contentType,
+            opts.filename,
+            undefined,
+            request,
+            accountInfo.config.maxLinesPerMessage,
+            undefined,
+            undefined,
+            chunkMode,
+            opts.silent,
+          );
+        } else {
+          await sendDiscordMedia(
+            rest,
+            threadId,
+            mediaCaption ?? "",
+            opts.mediaUrl!,
+            opts.mediaLocalRoots,
+            undefined,
+            request,
+            accountInfo.config.maxLinesPerMessage,
+            undefined,
+            undefined,
+            chunkMode,
+            opts.silent,
+          );
+        }
         await sendDiscordThreadTextChunks({
           rest,
           threadId,
@@ -239,7 +267,7 @@ export async function sendMessageDiscord(
         channelId: threadId,
         rest,
         token,
-        hasMedia: Boolean(opts.mediaUrl),
+        hasMedia: Boolean(opts.mediaUrl || opts.buffer),
       });
     }
 
@@ -259,21 +287,42 @@ export async function sendMessageDiscord(
 
   let result: { id: string; channel_id: string } | { id: string | null; channel_id: string };
   try {
-    if (opts.mediaUrl) {
-      result = await sendDiscordMedia(
-        rest,
-        channelId,
-        textWithTables,
-        opts.mediaUrl,
-        opts.mediaLocalRoots,
-        opts.replyTo,
-        request,
-        accountInfo.config.maxLinesPerMessage,
-        opts.components,
-        opts.embeds,
-        chunkMode,
-        opts.silent,
-      );
+    if (opts.mediaUrl || opts.buffer) {
+      if (opts.buffer) {
+        // Handle buffer-based upload
+        const bufferData =
+          typeof opts.buffer === "string" ? Buffer.from(opts.buffer, "base64") : opts.buffer;
+        result = await sendDiscordMediaBuffer(
+          rest,
+          channelId,
+          textWithTables,
+          bufferData,
+          opts.contentType,
+          opts.filename,
+          opts.replyTo,
+          request,
+          accountInfo.config.maxLinesPerMessage,
+          opts.components,
+          opts.embeds,
+          chunkMode,
+          opts.silent,
+        );
+      } else {
+        result = await sendDiscordMedia(
+          rest,
+          channelId,
+          textWithTables,
+          opts.mediaUrl!,
+          opts.mediaLocalRoots,
+          opts.replyTo,
+          request,
+          accountInfo.config.maxLinesPerMessage,
+          opts.components,
+          opts.embeds,
+          chunkMode,
+          opts.silent,
+        );
+      }
     } else {
       result = await sendDiscordText(
         rest,
@@ -293,7 +342,7 @@ export async function sendMessageDiscord(
       channelId,
       rest,
       token,
-      hasMedia: Boolean(opts.mediaUrl),
+      hasMedia: Boolean(opts.mediaUrl || opts.buffer),
     });
   }
 

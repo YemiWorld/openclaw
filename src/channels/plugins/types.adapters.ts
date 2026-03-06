@@ -98,6 +98,12 @@ export type ChannelOutboundContext = {
   identity?: OutboundIdentity;
   deps?: OutboundSendDeps;
   silent?: boolean;
+  /** Buffer data for direct attachment uploads (base64 string or Buffer). */
+  buffer?: Buffer | string;
+  /** MIME content type for buffer-based attachments. */
+  contentType?: string;
+  /** Filename for buffer-based attachments. */
+  filename?: string;
 };
 
 export type ChannelOutboundPayloadContext = ChannelOutboundContext & {
