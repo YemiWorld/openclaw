@@ -267,8 +267,23 @@ export class AcpxRuntime implements AcpRuntime {
     let sawDone = false;
     let sawError = false;
     const lines = createInterface({ input: child.stdout });
+    let lastOutputAt = Date.now();
+    let idleKillTimer: ReturnType<typeof setInterval> | null = null;
+    const turnIdleTimeoutMs =
+      this.config.turnIdleTimeoutSeconds != null && this.config.turnIdleTimeoutSeconds > 0
+        ? this.config.turnIdleTimeoutSeconds * 1000
+        : null;
+    if (turnIdleTimeoutMs != null) {
+      const checkIntervalMs = Math.min(turnIdleTimeoutMs, 30_000);
+      idleKillTimer = setInterval(() => {
+        if (Date.now() - lastOutputAt >= turnIdleTimeoutMs) {
+          child.kill();
+        }
+      }, checkIntervalMs);
+    }
     try {
       for await (const line of lines) {
+        lastOutputAt = Date.now();
         const parsed = parsePromptEventLine(line);
         if (!parsed) {
           continue;
@@ -318,6 +333,9 @@ export class AcpxRuntime implements AcpRuntime {
         yield { type: "done" };
       }
     } finally {
+      if (idleKillTimer != null) {
+        clearInterval(idleKillTimer);
+      }
       lines.close();
       if (input.signal) {
         input.signal.removeEventListener("abort", onAbort);

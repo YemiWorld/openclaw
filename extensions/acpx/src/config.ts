@@ -27,6 +27,7 @@ export type AcpxPluginConfig = {
   strictWindowsCmdWrapper?: boolean;
   timeoutSeconds?: number;
   queueOwnerTtlSeconds?: number;
+  turnIdleTimeoutSeconds?: number;
 };
 
 export type ResolvedAcpxPluginConfig = {
@@ -40,6 +41,7 @@ export type ResolvedAcpxPluginConfig = {
   strictWindowsCmdWrapper: boolean;
   timeoutSeconds?: number;
   queueOwnerTtlSeconds: number;
+  turnIdleTimeoutSeconds?: number;
 };
 
 const DEFAULT_PERMISSION_MODE: AcpxPermissionMode = "approve-reads";
@@ -81,6 +83,7 @@ function parseAcpxPluginConfig(value: unknown): ParseResult {
     "strictWindowsCmdWrapper",
     "timeoutSeconds",
     "queueOwnerTtlSeconds",
+    "turnIdleTimeoutSeconds",
   ]);
   for (const key of Object.keys(value)) {
     if (!allowedKeys.has(key)) {
@@ -152,6 +155,16 @@ function parseAcpxPluginConfig(value: unknown): ParseResult {
     return { ok: false, message: "queueOwnerTtlSeconds must be a non-negative number" };
   }
 
+  const turnIdleTimeoutSeconds = value.turnIdleTimeoutSeconds;
+  if (
+    turnIdleTimeoutSeconds !== undefined &&
+    (typeof turnIdleTimeoutSeconds !== "number" ||
+      !Number.isFinite(turnIdleTimeoutSeconds) ||
+      turnIdleTimeoutSeconds <= 0)
+  ) {
+    return { ok: false, message: "turnIdleTimeoutSeconds must be a positive number" };
+  }
+
   return {
     ok: true,
     value: {
@@ -166,6 +179,8 @@ function parseAcpxPluginConfig(value: unknown): ParseResult {
       timeoutSeconds: typeof timeoutSeconds === "number" ? timeoutSeconds : undefined,
       queueOwnerTtlSeconds:
         typeof queueOwnerTtlSeconds === "number" ? queueOwnerTtlSeconds : undefined,
+      turnIdleTimeoutSeconds:
+        typeof turnIdleTimeoutSeconds === "number" ? turnIdleTimeoutSeconds : undefined,
     },
   };
 }
@@ -219,6 +234,7 @@ export function createAcpxPluginConfigSchema(): OpenClawPluginConfigSchema {
         strictWindowsCmdWrapper: { type: "boolean" },
         timeoutSeconds: { type: "number", minimum: 0.001 },
         queueOwnerTtlSeconds: { type: "number", minimum: 0 },
+        turnIdleTimeoutSeconds: { type: "number", minimum: 1 },
       },
     },
   };
@@ -260,5 +276,6 @@ export function resolveAcpxPluginConfig(params: {
       normalized.strictWindowsCmdWrapper ?? DEFAULT_STRICT_WINDOWS_CMD_WRAPPER,
     timeoutSeconds: normalized.timeoutSeconds,
     queueOwnerTtlSeconds: normalized.queueOwnerTtlSeconds ?? DEFAULT_QUEUE_OWNER_TTL_SECONDS,
+    turnIdleTimeoutSeconds: normalized.turnIdleTimeoutSeconds,
   };
 }
