@@ -34,6 +34,10 @@
       "queueOwnerTtlSeconds": {
         "type": "number",
         "minimum": 0
+      },
+      "turnIdleTimeoutSeconds": {
+        "type": "number",
+        "minimum": 1
       }
     }
   },
@@ -71,6 +75,11 @@
     "queueOwnerTtlSeconds": {
       "label": "Queue Owner TTL Seconds",
       "help": "Idle queue-owner TTL for acpx prompt turns. Keep this short in OpenClaw to avoid delayed completion after each turn.",
+      "advanced": true
+    },
+    "turnIdleTimeoutSeconds": {
+      "label": "Turn Idle Timeout Seconds",
+      "help": "Kill a turn if acpx produces no output for this many seconds. Resets on every event (tool call, text chunk, etc). Prevents hung turns from blocking a session indefinitely.",
       "advanced": true
     }
   }
