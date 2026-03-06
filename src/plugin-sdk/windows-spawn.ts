@@ -268,7 +268,6 @@ export function applyWindowsSpawnProgramPolicy(params: {
       leadingArgv: [],
       resolution: "shell-fallback",
       shell: true,
-      windowsHide: true,
     };
   }
   throw new Error(

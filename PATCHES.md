@@ -54,18 +54,7 @@ until acpx supports the `set model` control command or a `--model` prompt flag i
 
 ---
 
-## 4. Windows Process Visibility Fix
-
-**File:** `src/plugin-sdk/windows-spawn.ts`
-
-Added `windowsHide: true` to the shell-fallback spawn path in `applyWindowsSpawnProgramPolicy`.
-Without this, every `acpx` subprocess (prompt, set, close, ensure) opened a visible console
-window on Windows when the `.cmd` wrapper entrypoint couldn't be resolved. With this fix,
-all spawned processes run hidden in the background.
-
----
-
-## 5. Gateway Nested Lane Concurrency
+## 4. Gateway Nested Lane Concurrency
 
 **File:** `src/gateway/server-lanes.ts`
 
