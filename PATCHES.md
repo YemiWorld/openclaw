@@ -54,7 +54,20 @@ until acpx supports the `set model` control command or a `--model` prompt flag i
 
 ---
 
-## 4. Gateway Nested Lane Concurrency
+## 4. ACP Turn Idle Timeout
+
+**Files:**
+
+- `extensions/acpx/src/config.ts` — added `turnIdleTimeoutSeconds?: number` to `AcpxPluginConfig` and `ResolvedAcpxPluginConfig`; validation, JSON schema, and resolution wired through
+- `extensions/acpx/src/runtime.ts` — added output-idle kill timer in `runTurn`; resets on every stdout line; kills child process if silent for `turnIdleTimeoutSeconds`
+
+**Config:** `~/.openclaw/openclaw.json` → `plugins.entries.acpx.config.turnIdleTimeoutSeconds: 1200` (20 min)
+
+**Why:** Without this, if a Claude subprocess hangs mid-turn (e.g. a shell command that never returns), the `for await` readline loop on acpx stdout waits forever. The typing indicator keeps refreshing, the actor queue slot is held indefinitely, and all subsequent messages on that session are blocked.
+
+---
+
+## 5. Gateway Nested Lane Concurrency
 
 **File:** `src/gateway/server-lanes.ts`
 
