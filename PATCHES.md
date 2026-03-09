@@ -1,89 +1,333 @@
 # Local Patches
 
 Custom patches applied on top of upstream openclaw. When merging upstream updates,
-re-check these files for conflicts.
+re-check these files for conflicts and re-apply any that are clobbered.
+
+**Last fully audited against:** `upstream/main` @ `e45d62ba2` (pre-2026.3.7)
+**Next merge target:** 2026.3.8 (`v2026.3.8`) / upstream HEAD `1bc59cc09`
 
 ---
 
-## 1. ACP Dynamic Model Selection
+## Patch 1 — ACP Dynamic Model Selection
+
+**Purpose:** Wire a `model` override through the ACP session spawn path so sessions can be
+started with a specific model (e.g. `claude-sonnet-4-6`) without relying on acpx's broken
+`set model` control command (exits code 1; unsupported).
 
 **Files:**
 
-- `src/config/types.acp.ts` — added `defaultClaudeModel?: string` to `AcpConfig`
-- `src/config/zod-schema.ts` — added `defaultClaudeModel` to acp zod schema
-- `src/acp/control-plane/manager.types.ts` — added `model?: string` to `AcpInitializeSessionInput`
-- `src/acp/control-plane/manager.core.ts` — resolve model from input or config default in `initializeSession`
-- `src/acp/control-plane/runtime-options.ts` — removed `model` from `buildRuntimeConfigOptionPairs` (acpx `set model` command not supported; model is tracked in session meta but not applied via control command)
-- `src/agents/acp-spawn.ts` — added `model?: string` to `SpawnAcpParams`, passed to `initializeSession`
-- `src/agents/tools/sessions-spawn-tool.ts` — pass `modelOverride` through to `spawnAcpDirect`
+| File                                       | Change                                                          |
+| ------------------------------------------ | --------------------------------------------------------------- |
+| `src/config/types.acp.ts`                  | Added `defaultClaudeModel?: string` to `AcpConfig`              |
+| `src/config/zod-schema.ts`                 | Added `defaultClaudeModel: z.string().optional()` to acp schema |
+| `src/acp/control-plane/manager.types.ts`   | Added `model?: string` to `AcpInitializeSessionInput`           |
+| `src/acp/control-plane/manager.core.ts`    | Resolve model in `initializeSession` (see snippet)              |
+| `src/acp/control-plane/runtime-options.ts` | Removed `model` from `buildRuntimeConfigOptionPairs`            |
+| `src/agents/acp-spawn.ts`                  | Added `model?: string` to `SpawnAcpParams`                      |
+| `src/agents/tools/sessions-spawn-tool.ts`  | Pass `modelOverride` through to `spawnAcpDirect`                |
+
+**Key snippet — `manager.core.ts` `initializeSession`:**
+
+```typescript
+const resolvedModel = input.model ?? input.cfg.acp?.defaultClaudeModel;
+const initialRuntimeOptions = validateRuntimeOptionPatch({
+  cwd: input.cwd,
+  ...(resolvedModel ? { model: resolvedModel } : {}),
+});
+```
 
 **Config:** `~/.openclaw/openclaw.json` → `acp.defaultClaudeModel: "claude-sonnet-4-6"`
 
-**Note:** `acpx set model` exits with code 1 (unsupported). Model is stored in session meta
-only. Dynamic model selection via `sessions_spawn model=` is wired but has no runtime effect
-until acpx supports the `set model` control command or a `--model` prompt flag is added.
+**Note:** `acpx set model` exits code 1 (unsupported). Model is tracked in session meta only.
+No runtime effect until acpx supports `--model` flag or `set model` command.
+
+**Merge risk (2026.3.8):** HIGH — upstream removed our model code from `manager.core.ts` and
+refactored the function (added abort signal support). Re-apply the 4-line snippet after merge.
 
 ---
 
-## 2. Discord Text Attachment Inlining
+## Patch 2 — Discord Text Attachment Inlining
+
+**Purpose:** When an inbound Discord message has a text-based file attachment (`.txt`, `.md`,
+`.json`, `.py`, etc.), automatically read the file from disk and prepend its contents into the
+agent prompt so agents see the actual text rather than just a file path.
 
 **Files:**
 
-- `src/auto-reply/media-note.ts` — added `inlineTextAttachments()` async function; reads
-  text-based attachments (`.txt`, `.md`, `.json`, etc.) and inlines content into agent prompt
-- `src/auto-reply/reply/get-reply-run.ts` — calls `inlineTextAttachments` before building
-  prompt body; inlined text prepended to message so agent sees file contents
-- `src/auto-reply/types.ts` — related type additions
+| File                                    | Change                                                                 |
+| --------------------------------------- | ---------------------------------------------------------------------- |
+| `src/auto-reply/media-note.ts`          | Added `inlineTextAttachments()` async function + helpers (~110 lines)  |
+| `src/auto-reply/reply/get-reply-run.ts` | Call `inlineTextAttachments` before building prompt body               |
+| `src/auto-reply/types.ts`               | Added `MediaPaths?: string[]`, `MediaTypes?: string[]` to `MsgContext` |
+
+**Key snippet — `media-note.ts`:**
+
+```typescript
+const TEXT_INLINE_CONTENT_TYPES = new Set([
+  "text/plain",
+  "text/csv",
+  "text/markdown",
+  "text/html",
+  "text/css",
+  "text/xml",
+  "text/javascript",
+  "application/json",
+  "application/xml",
+  "application/javascript",
+  "application/yaml",
+  "application/x-yaml",
+]);
+const TEXT_INLINE_EXTENSIONS = new Set([
+  ".txt",
+  ".csv",
+  ".md",
+  ".json",
+  ".xml",
+  ".yaml",
+  ".yml",
+  ".html",
+  ".css",
+  ".js",
+  ".ts",
+  ".jsx",
+  ".tsx",
+  ".py",
+  ".sh",
+  ".bash",
+  ".log",
+  ".ini",
+  ".toml",
+  ".cfg",
+  ".conf",
+  ".env",
+  ".sql",
+  ".graphql",
+  ".svg",
+]);
+const TEXT_INLINE_MAX_CHARS = 50_000;
+
+export async function inlineTextAttachments(ctx: MsgContext): Promise<string | undefined> {
+  // reads ctx.MediaPaths or ctx.MediaPath
+  // checks content type or extension for text types
+  // reads each file (fs/promises), truncates at 50k chars
+  // returns formatted blocks with filename headers
+}
+```
+
+**Key snippet — `get-reply-run.ts`:**
+
+```typescript
+const inlineAttachmentText = await inlineTextAttachments(msgCtx);
+if (inlineAttachmentText) {
+  promptBody = inlineAttachmentText + "\n\n" + promptBody;
+}
+```
+
+**Merge risk (2026.3.8):** HIGH — upstream removed our entire `inlineTextAttachments` from
+`media-note.ts` (reduced to 2-line stub). `get-reply-run.ts` and `types.ts` also changed.
+Must re-add the function and its call site after merge.
 
 ---
 
-## 3. Discord Messaging Improvements
+## Patch 3 — Discord Messaging Improvements
+
+**Purpose:** Multiple enhancements to Discord outbound messaging:
+
+1. **Typing indicator fix** — disabled the 60-second TTL timer causing delivery blockage
+   (`maxDurationMs: 0` on the typing callback)
+2. **Buffer-based attachment uploads** — agents can upload binary data (base64 buffer +
+   contentType + filename) directly without needing a public URL
+3. **Enhanced discord-actions tool** — poll options, voice/silent flags, reaction management,
+   channel history listing, voice message support, buffer upload support
 
 **Files:**
 
-- `src/discord/send.outbound.ts` — outbound send improvements
-- `src/discord/send.shared.ts` — shared send utilities
-- `src/discord/send.components.ts` — component helpers
-- `src/discord/monitor/message-handler.process.ts` — added `maxDurationMs: 0` to typing
-  indicator callback (disables 60s TTL timer that was causing blockage)
-- `src/channels/plugins/outbound/direct-text-media.ts` — direct text/media send improvements
-- `src/channels/plugins/outbound/discord.ts` — discord outbound plugin
-- `src/channels/plugins/types.adapters.ts` — adapter type additions
-- `src/channels/plugins/actions/discord/handle-action.ts` — discord action handler
-- `src/agents/tools/discord-actions-messaging.ts` — discord actions messaging tool
+| File                                                    | Change                                                  |
+| ------------------------------------------------------- | ------------------------------------------------------- |
+| `src/discord/monitor/message-handler.process.ts`        | `maxDurationMs: 0` on typing indicator                  |
+| `src/discord/send.outbound.ts`                          | Outbound send improvements                              |
+| `src/discord/send.shared.ts`                            | Shared send utilities                                   |
+| `src/discord/send.components.ts`                        | Component helpers                                       |
+| `src/channels/plugins/outbound/direct-text-media.ts`    | Buffer-based upload support                             |
+| `src/channels/plugins/outbound/discord.ts`              | Discord outbound plugin                                 |
+| `src/channels/plugins/types.adapters.ts`                | Added `buffer?`, `contentType?`, `filename?` to adapter |
+| `src/channels/plugins/actions/discord/handle-action.ts` | Handle-action improvements                              |
+| `src/agents/tools/discord-actions-messaging.ts`         | Extended discord messaging tools                        |
+
+**Key snippet — `message-handler.process.ts` (most critical):**
+
+```typescript
+// maxDurationMs: 0 disables the 60s TTL that was blocking delivery
+typingIndicator.start({ maxDurationMs: 0 });
+```
+
+**Key snippet — `types.adapters.ts` additions:**
+
+```typescript
+// In ChannelOutboundAdapter sendMedia params:
+buffer?: Buffer | string;
+contentType?: string;
+filename?: string;
+```
+
+**Merge risk (2026.3.8):** HIGH — all discord send files and `message-handler.process.ts`
+changed upstream. The `maxDurationMs: 0` single-line fix is the most critical to preserve.
 
 ---
 
-## 4. ACP Turn Idle Timeout
+## Patch 4 — ACP Turn Idle Timeout
+
+**Purpose:** Kill hung acpx turns (Claude subprocess silent for N seconds) so the actor
+queue slot is not held indefinitely. Without this, a stuck shell command blocks all subsequent
+messages on that ACP session forever.
 
 **Files:**
 
-- `extensions/acpx/src/config.ts` — added `turnIdleTimeoutSeconds?: number` to `AcpxPluginConfig` and `ResolvedAcpxPluginConfig`; validation, JSON schema, and resolution wired through
-- `extensions/acpx/src/runtime.ts` — added output-idle kill timer in `runTurn`; resets on every stdout line; kills child process if silent for `turnIdleTimeoutSeconds`
+| File                             | Change                                                                               |
+| -------------------------------- | ------------------------------------------------------------------------------------ |
+| `extensions/acpx/src/config.ts`  | Added `turnIdleTimeoutSeconds?: number` to types, validation, JSON schema            |
+| `extensions/acpx/src/runtime.ts` | Output-idle kill timer in `runTurn`; resets on stdout; kills after N seconds silence |
 
-**Config:** `~/.openclaw/openclaw.json` → `plugins.entries.acpx.config.turnIdleTimeoutSeconds: 1200` (20 min)
+**Key snippet — `runtime.ts` idle kill timer (insert inside `runTurn`):**
 
-**Why:** Without this, if a Claude subprocess hangs mid-turn (e.g. a shell command that never returns), the `for await` readline loop on acpx stdout waits forever. The typing indicator keeps refreshing, the actor queue slot is held indefinitely, and all subsequent messages on that session are blocked.
+```typescript
+let lastOutputAt = Date.now();
+let idleKillTimer: ReturnType<typeof setInterval> | null = null;
+const turnIdleTimeoutMs =
+  this.config.turnIdleTimeoutSeconds != null && this.config.turnIdleTimeoutSeconds > 0
+    ? this.config.turnIdleTimeoutSeconds * 1000
+    : null;
+if (turnIdleTimeoutMs != null) {
+  const checkIntervalMs = Math.min(turnIdleTimeoutMs, 30_000);
+  idleKillTimer = setInterval(() => {
+    if (Date.now() - lastOutputAt >= turnIdleTimeoutMs) {
+      child.kill();
+    }
+  }, checkIntervalMs);
+}
+// In the stdout readline `for await` loop, add:
+lastOutputAt = Date.now();
+// In finally block, add:
+if (idleKillTimer != null) clearInterval(idleKillTimer);
+```
+
+**Key snippet — `config.ts` additions (add alongside upstream `mcpServers`):**
+
+```typescript
+// In AcpxPluginConfig and ResolvedAcpxPluginConfig:
+turnIdleTimeoutSeconds?: number;
+
+// In parseAcpxPluginConfig allowed keys:
+"turnIdleTimeoutSeconds",
+
+// In parseAcpxPluginConfig validation:
+const turnIdleTimeoutSeconds = value.turnIdleTimeoutSeconds;
+if (turnIdleTimeoutSeconds !== undefined && (
+  typeof turnIdleTimeoutSeconds !== "number" ||
+  !Number.isFinite(turnIdleTimeoutSeconds) ||
+  turnIdleTimeoutSeconds <= 0
+)) {
+  return { ok: false, message: "turnIdleTimeoutSeconds must be a positive number" };
+}
+
+// In createAcpxPluginConfigSchema JSON schema:
+turnIdleTimeoutSeconds: { type: "number", minimum: 1 },
+```
+
+**Config:** `~/.openclaw/openclaw.json`:
+
+```json
+"plugins": { "entries": { "acpx": { "config": { "turnIdleTimeoutSeconds": 1200 } } } }
+```
+
+**Merge risk (2026.3.8):** CRITICAL — upstream replaced `turnIdleTimeoutSeconds` with a new
+`mcpServers` feature. Both `config.ts` and `runtime.ts` were substantially refactored. Must
+re-add `turnIdleTimeoutSeconds` alongside the new `mcpServers` block after merge.
+
+**Note on new upstream `mcpServers` feature:** Allows injecting MCP servers (e.g.
+`sequential-thinking`) directly into acpx sessions via plugin config. Keep this — it's additive
+and very useful. Our `turnIdleTimeoutSeconds` is orthogonal and must be re-added alongside it.
 
 ---
 
-## 5. Gateway Nested Lane Concurrency
+## Patch 5 — Gateway Nested Lane Concurrency
+
+**Purpose:** The `Nested` command lane (sub-agents) was not respecting the configured subagent
+concurrency limit. This wires the config through so sub-agents obey `agents.defaults.maxConcurrent`.
 
 **File:** `src/gateway/server-lanes.ts`
 
-Added `setCommandLaneConcurrency(CommandLane.Nested, resolveSubagentMaxConcurrent(cfg))` so
-the Nested command lane respects the configured subagent concurrency limit.
+**Key snippet (one line, add after other `setCommandLaneConcurrency` calls):**
+
+```typescript
+setCommandLaneConcurrency(CommandLane.Nested, resolveSubagentMaxConcurrent(cfg));
+```
+
+**Merge risk (2026.3.8):** MEDIUM — `server-lanes.ts` changed upstream. Verify the line
+survives or re-add it.
 
 ---
 
-## Upstream Merge Strategy
+## Patch 6 — Judah Dispatch Channel Plugin (UNTRACKED — NOT YET COMMITTED)
 
-```
-git fetch upstream
-git diff upstream/main..HEAD --name-only   # see what upstream changed
-git merge upstream/main                    # or: git rebase upstream/main
-# resolve conflicts in the patched files listed above
+**Purpose:** Custom outbound-only channel plugin for agent-to-agent messaging via the
+`judah-dispatch` stack. Agents send messages to other agents via POST `/dm-send`.
+
+**Status:** File exists at `src/channels/plugins/outbound/dispatch.ts` but has never been
+committed to git. Must be committed after merge (no conflict risk).
+
+**File:** `src/channels/plugins/outbound/dispatch.ts` (117 lines)
+
+**Design:**
+
+- Outbound-only (`deliveryMode: "direct"`) — no gateway adapter
+- Inbound DMs arrive via api.js WS bridge → openclaw gateway HTTP/WS API (Telegram pattern)
+- Env vars: `DISPATCH_API_URL` (default `http://127.0.0.1:3010`), `DISPATCH_AGENT_ID`
+- `sendText` and `sendMedia` via `POST /dm-send`
+- Plugin ID: `"dispatch"`, label: `"Judah Dispatch"`
+- Export: `dispatchChannelPlugin`
+
+**Merge risk:** NONE (untracked file, no conflict possible — just commit after merge).
+
+---
+
+## Upstream Merge Conflict Resolution Guide
+
+### For each conflicted file:
+
+**`extensions/acpx/src/config.ts`**
+Accept upstream's full rewrite (keep `mcpServers`). Then add `turnIdleTimeoutSeconds`
+alongside `mcpServers` in all four places: type definition, validation, allowed keys, JSON schema.
+
+**`extensions/acpx/src/runtime.ts`**
+Accept upstream's refactored `runTurn`. Find the `for await` stdout readline loop, insert
+the idle kill timer block around it (see Patch 4 snippet).
+
+**`src/acp/control-plane/manager.core.ts`**
+Accept upstream's `initializeSession` refactor. Find `validateRuntimeOptionPatch({ cwd: ... })`,
+replace with the 4-line model-resolution snippet (see Patch 1 snippet).
+
+**`src/auto-reply/media-note.ts`**
+Accept upstream's file as-is, then append the full `inlineTextAttachments` function + constants.
+Re-export the function.
+
+**`src/auto-reply/reply/get-reply-run.ts`**
+Accept upstream's version, locate prompt body assembly, re-insert the `inlineTextAttachments`
+call (see Patch 2 snippet).
+
+**`src/discord/monitor/message-handler.process.ts`**
+Accept upstream's version, find the typing indicator start call, ensure `maxDurationMs: 0`.
+
+**`src/gateway/server-lanes.ts`**
+Accept upstream's version, verify `CommandLane.Nested` concurrency line is present.
+
+### Commands
+
+```bash
+git checkout -b backup/pre-upstream-merge
+git checkout main
+git merge upstream/main
+# resolve conflicts per guide above
 pnpm build
+openclaw doctor
 ```
-
-If upstream changes any patched file, check the diff carefully before accepting theirs.
