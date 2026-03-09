@@ -38,6 +38,29 @@
       "turnIdleTimeoutSeconds": {
         "type": "number",
         "minimum": 1
+      },
+      "mcpServers": {
+        "type": "object",
+        "additionalProperties": {
+          "type": "object",
+          "properties": {
+            "command": {
+              "type": "string",
+              "description": "Command to run the MCP server"
+            },
+            "args": {
+              "type": "array",
+              "items": { "type": "string" },
+              "description": "Arguments to pass to the command"
+            },
+            "env": {
+              "type": "object",
+              "additionalProperties": { "type": "string" },
+              "description": "Environment variables for the MCP server"
+            }
+          },
+          "required": ["command"]
+        }
       }
     }
   },
@@ -80,6 +103,11 @@
     "turnIdleTimeoutSeconds": {
       "label": "Turn Idle Timeout Seconds",
       "help": "Kill a turn if acpx produces no output for this many seconds. Resets on every event (tool call, text chunk, etc). Prevents hung turns from blocking a session indefinitely.",
+      "advanced": true
+    },
+    "mcpServers": {
+      "label": "MCP Servers",
+      "help": "Named MCP server definitions to inject into ACPX-backed session bootstrap. Each entry needs a command and can include args and env.",
       "advanced": true
     }
   }
