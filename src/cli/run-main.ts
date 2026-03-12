@@ -97,6 +97,14 @@ export async function runCli(argv: string[] = process.argv) {
   installUnhandledRejectionHandler();
 
   process.on("uncaughtException", (error) => {
+    const message = String(error?.message ?? error);
+    // Carbon GatewayPlugin throws "Max reconnect attempts" directly instead of
+    // emitting it as an event. This is non-fatal — the health monitor will
+    // restart the affected bot. Don't crash the entire gateway.
+    if (message.includes("Max reconnect attempts")) {
+      console.warn("[openclaw] Discord gateway reconnect limit reached (non-fatal):", message);
+      return;
+    }
     console.error("[openclaw] Uncaught exception:", formatUncaughtError(error));
     process.exit(1);
   });

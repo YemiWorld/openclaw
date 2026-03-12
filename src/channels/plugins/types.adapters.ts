@@ -279,6 +279,8 @@ export type ChannelPairingAdapter = {
 };
 
 export type ChannelGatewayAdapter<ResolvedAccount = unknown> = {
+  /** Stagger delay between accounts on startup (ms per account index). Prevents IDENTIFY rate-limit storms when many accounts connect simultaneously. */
+  connectStaggerMs?: number;
   startAccount?: (ctx: ChannelGatewayContext<ResolvedAccount>) => Promise<unknown>;
   stopAccount?: (ctx: ChannelGatewayContext<ResolvedAccount>) => Promise<void>;
   loginWithQrStart?: (params: {

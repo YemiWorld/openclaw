@@ -165,8 +165,12 @@ export function createChannelManager(opts: ChannelManagerOptions): ChannelManage
       return;
     }
 
+    const connectStaggerMs = plugin.gateway?.connectStaggerMs ?? 0;
     await Promise.all(
-      accountIds.map(async (id) => {
+      accountIds.map(async (id, idx) => {
+        if (connectStaggerMs > 0 && idx > 0) {
+          await new Promise<void>((resolve) => setTimeout(resolve, idx * connectStaggerMs));
+        }
         if (store.tasks.has(id)) {
           return;
         }

@@ -3,8 +3,8 @@
 Custom patches applied on top of upstream openclaw. When merging upstream updates,
 re-check these files for conflicts and re-apply any that are clobbered.
 
-**Last fully audited against:** `upstream/main` @ `e45d62ba2` (pre-2026.3.7)
-**Next merge target:** 2026.3.8 (`v2026.3.8`) / upstream HEAD `1bc59cc09`
+**Last fully audited against:** `upstream/main` @ `1bc59cc09` (2026.3.8, merged 2026-03-10)
+**Next merge target:** upstream HEAD post-2026.3.8
 
 ---
 
@@ -316,7 +316,7 @@ Accept upstream's version, locate prompt body assembly, re-insert the `inlineTex
 call (see Patch 2 snippet).
 
 **`src/discord/monitor/message-handler.process.ts`**
-Accept upstream's version, find the typing indicator start call, ensure `maxDurationMs: 0`.
+Accept upstream's version. Find `DISCORD_TYPING_MAX_DURATION_MS` and set to `240 * 60_000` (Patch 3). Find the typing indicator start call, ensure `maxDurationMs: DISCORD_TYPING_MAX_DURATION_MS`.
 
 **`src/gateway/server-lanes.ts`**
 Accept upstream's version, verify `CommandLane.Nested` concurrency line is present.
@@ -331,3 +331,77 @@ git merge upstream/main
 pnpm build
 openclaw doctor
 ```
+
+---
+
+## Patch 7 — Discord Typing Indicator Duration (4 hours)
+
+**Purpose:** ACP turns can run 1.5–2+ hours. The upstream constant `DISCORD_TYPING_MAX_DURATION_MS = 20 * 60_000`
+(20 minutes) stops the typing indicator mid-turn, making the bot appear dead to the user.
+The typing indicator is the only visual signal that a session is alive and working.
+
+**Files:**
+
+| File                                                | Change                                   |
+| --------------------------------------------------- | ---------------------------------------- |
+| `src/discord/monitor/message-handler.process.ts:61` | `20 * 60_000` → `240 * 60_000` (4 hours) |
+
+**Code:**
+
+```typescript
+// line 61
+const DISCORD_TYPING_MAX_DURATION_MS = 240 * 60_000; // 4 hours — supports long-running ACP turns
+```
+
+**Merge risk:** LOW — single constant change, easy to reapply.
+
+---
+
+## Patch 8 — Discord Gateway Connect Stagger
+
+**Purpose:** With 19+ Discord bots all connecting simultaneously on startup, Discord's IDENTIFY
+rate limit (1/5s) causes exponential backoff — resulting in 40-minute reconnect delays and
+event loop pressure that causes `Unknown interaction` errors (code 10062, >3s response time).
+Staggering connections 6s apart keeps each IDENTIFY within rate limits.
+
+**Account priority** is determined by the order of `channels.discord.accounts` in `openclaw.json`.
+Accounts listed first connect first (no delay). Reorder to prioritize critical bots.
+
+**Files:**
+
+| File                                         | Change                                                          |
+| -------------------------------------------- | --------------------------------------------------------------- |
+| `src/channels/plugins/types.adapters.ts:281` | Add `connectStaggerMs?: number` to `ChannelGatewayAdapter`      |
+| `extensions/discord/src/channel.ts:416`      | Set `connectStaggerMs: 6_000` on gateway object                 |
+| `src/gateway/server-channels.ts:168`         | Apply `idx * connectStaggerMs` delay before each `startAccount` |
+
+**Code (server-channels.ts):**
+
+```typescript
+const connectStaggerMs = plugin.gateway?.connectStaggerMs ?? 0;
+await Promise.all(
+  accountIds.map(async (id, idx) => {
+    if (connectStaggerMs > 0 && idx > 0) {
+      await new Promise<void>((resolve) => setTimeout(resolve, idx * connectStaggerMs));
+    }
+    // ... existing per-account logic
+```
+
+**Merge risk:** LOW — additive change to adapter type + one line per file.
+
+---
+
+## Patch 9 — Uncaught Exception Guard for Carbon Gateway
+
+**Purpose:** Carbon's `GatewayPlugin.handleReconnectionAttempt` throws `Error("Max reconnect attempts")`
+directly instead of emitting it as an event. Openclaw's lifecycle code expects this as an emitted event.
+The uncaught throw hits the process-level handler which calls `process.exit(1)`, crashing the entire
+gateway and all 19+ Discord bots when a single bot's WebSocket closes during shutdown/restart.
+
+**Files:**
+
+| File                     | Change                                                                                         |
+| ------------------------ | ---------------------------------------------------------------------------------------------- |
+| `src/cli/run-main.ts:99` | Catch "Max reconnect attempts" in uncaughtException handler, log as warning instead of exiting |
+
+**Merge risk:** LOW — additive guard, does not change normal exit behavior.

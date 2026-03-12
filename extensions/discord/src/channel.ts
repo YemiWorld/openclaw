@@ -414,6 +414,7 @@ export const discordPlugin: ChannelPlugin<ResolvedDiscordAccount> = {
     },
   },
   gateway: {
+    connectStaggerMs: 6_000, // 6s per account — stays within Discord's 1 IDENTIFY/5s rate limit
     startAccount: async (ctx) => {
       const account = ctx.account;
       const token = account.token.trim();

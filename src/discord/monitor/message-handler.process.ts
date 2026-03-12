@@ -58,7 +58,7 @@ function sleep(ms: number): Promise<void> {
   });
 }
 
-const DISCORD_TYPING_MAX_DURATION_MS = 20 * 60_000;
+const DISCORD_TYPING_MAX_DURATION_MS = 240 * 60_000; // 4 hours — supports long-running ACP turns
 
 function isProcessAborted(abortSignal?: AbortSignal): boolean {
   return Boolean(abortSignal?.aborted);
