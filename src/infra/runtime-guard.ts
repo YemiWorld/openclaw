@@ -9,7 +9,7 @@ type Semver = {
   patch: number;
 };
 
-const MIN_NODE: Semver = { major: 22, minor: 16, patch: 0 };
+const MIN_NODE: Semver = { major: 22, minor: 13, patch: 0 }; // lowered from 22.16.0 for local compat
 
 export type RuntimeDetails = {
   kind: RuntimeKind;

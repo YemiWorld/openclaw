@@ -3,46 +3,21 @@
 Custom patches applied on top of upstream openclaw. When merging upstream updates,
 re-check these files for conflicts and re-apply any that are clobbered.
 
-**Last fully audited against:** `upstream/main` @ `1bc59cc09` (2026.3.8, merged 2026-03-10)
-**Next merge target:** upstream HEAD post-2026.3.8
+**Last fully audited against:** `upstream/main` @ v2026.3.12 (merged 2026-03-12)
+**Next merge target:** upstream HEAD post-2026.3.12
 
 ---
 
-## Patch 1 — ACP Dynamic Model Selection
+## Patch 1 — ACP Model Selection — DROPPED (2026-03-12)
 
-**Purpose:** Wire a `model` override through the ACP session spawn path so sessions can be
-started with a specific model (e.g. `claude-sonnet-4-6`) without relying on acpx's broken
-`set model` control command (exits code 1; unsupported).
+**Status:** Dropped. Use native `/acp model <id>` or `~/.claude/settings.json` instead.
 
-**Files:**
+**Root cause:** `~/.claude/settings.json` had `"model": "sonnet"` which claude-agent-acp reads
+at session init (`getAvailableModels` → `query.setModel`) and overrides ANY model set via
+`_meta.claudeCode.options.model`. Removing that key fixed the issue. No code patches needed.
 
-| File                                       | Change                                                          |
-| ------------------------------------------ | --------------------------------------------------------------- |
-| `src/config/types.acp.ts`                  | Added `defaultClaudeModel?: string` to `AcpConfig`              |
-| `src/config/zod-schema.ts`                 | Added `defaultClaudeModel: z.string().optional()` to acp schema |
-| `src/acp/control-plane/manager.types.ts`   | Added `model?: string` to `AcpInitializeSessionInput`           |
-| `src/acp/control-plane/manager.core.ts`    | Resolve model in `initializeSession` (see snippet)              |
-| `src/acp/control-plane/runtime-options.ts` | Removed `model` from `buildRuntimeConfigOptionPairs`            |
-| `src/agents/acp-spawn.ts`                  | Added `model?: string` to `SpawnAcpParams`                      |
-| `src/agents/tools/sessions-spawn-tool.ts`  | Pass `modelOverride` through to `spawnAcpDirect`                |
-
-**Key snippet — `manager.core.ts` `initializeSession`:**
-
-```typescript
-const resolvedModel = input.model ?? input.cfg.acp?.defaultClaudeModel;
-const initialRuntimeOptions = validateRuntimeOptionPatch({
-  cwd: input.cwd,
-  ...(resolvedModel ? { model: resolvedModel } : {}),
-});
-```
-
-**Config:** `~/.openclaw/openclaw.json` → `acp.defaultClaudeModel: "claude-sonnet-4-6"`
-
-**Note:** `acpx set model` exits code 1 (unsupported). Model is tracked in session meta only.
-No runtime effect until acpx supports `--model` flag or `set model` command.
-
-**Merge risk (2026.3.8):** HIGH — upstream removed our model code from `manager.core.ts` and
-refactored the function (added abort signal support). Re-apply the 4-line snippet after merge.
+**Important:** `~/.claude/settings.json` must NOT contain a `"model"` key — it overrides all
+per-session model selection.
 
 ---
 
@@ -405,3 +380,88 @@ gateway and all 19+ Discord bots when a single bot's WebSocket closes during shu
 | `src/cli/run-main.ts:99` | Catch "Max reconnect attempts" in uncaughtException handler, log as warning instead of exiting |
 
 **Merge risk:** LOW — additive guard, does not change normal exit behavior.
+
+---
+
+## Patch 10 — Uncaught Exception Guard (Gateway Entry Point)
+
+**Purpose:** Patch 9 only covered `src/cli/run-main.ts` (CLI entry). The gateway uses
+`src/index.ts` as its entry point, which has its own `uncaughtException` handler without the
+Carbon crash guard. During SIGINT shutdown, Carbon throws "Max reconnect attempts" uncaught,
+hitting the bare handler and calling `process.exit(1)` — crashing the entire gateway.
+
+**Files:**
+
+| File              | Change                                                             |
+| ----------------- | ------------------------------------------------------------------ |
+| `src/index.ts:84` | Same "Max reconnect attempts" guard as Patch 9, applied to gateway |
+
+**Merge risk:** LOW — same pattern as Patch 9.
+
+---
+
+## Patch 11 — Typing Controller Idle TTL (4 hours)
+
+**Purpose:** The auto-reply typing controller (`src/auto-reply/reply/typing.ts`) has its own
+idle TTL separate from `DISCORD_TYPING_MAX_DURATION_MS` (Patch 7). The default is 2 minutes —
+if no new output refreshes it within 2 minutes, typing stops. For ACP turns where agents think
+or wait for sub-agents for extended periods with no stdout, typing dies at 2 minutes regardless
+of Patch 7's 4-hour ceiling.
+
+**Files:**
+
+| File                                | Change                                  |
+| ----------------------------------- | --------------------------------------- |
+| `src/auto-reply/reply/typing.ts:28` | `2 * 60_000` → `240 * 60_000` (4 hours) |
+
+**Code:**
+
+```typescript
+// line 28
+typingTtlMs = 240 * 60_000, // 4 hours — supports long-running ACP turns with idle periods
+```
+
+**Merge risk:** LOW — single default value change.
+
+---
+
+## Patch 12 — Strip CLAUDECODE Env Var for ACP Agent Spawning
+
+**Purpose:** When openclaw runs inside a Claude Code session (e.g. during development/admin),
+the `CLAUDECODE=1` env var is inherited by the gateway process. This propagates through
+acpx → claude-agent-acp → Claude CLI, which detects it and refuses to start with
+"cannot be launched inside another Claude Code session". This makes all ACP sessions fail
+silently with `ACP_SESSION_INIT_FAILED` / "Query closed before response received".
+
+**Files:**
+
+| File                                                       | Change                                              |
+| ---------------------------------------------------------- | --------------------------------------------------- |
+| `src/index.ts:4`                                           | `delete process.env.CLAUDECODE` at gateway startup  |
+| `src/cli/run-main.ts:4`                                    | `delete process.env.CLAUDECODE` at CLI startup      |
+| `extensions/acpx/src/runtime-internals/process.ts:142-148` | Always strip `CLAUDECODE` from acpx child spawn env |
+
+**Merge risk:** LOW — additive, no conflict with upstream.
+
+---
+
+## Patch 13 — Node.js Version Guard Lowered
+
+**Purpose:** Upstream 2026.3.11 requires Node >=22.16.0. Local server runs Node 22.13.1.
+Lowered the hard guard to allow startup.
+
+**Files:**
+
+| File                            | Change                                                                      |
+| ------------------------------- | --------------------------------------------------------------------------- |
+| `src/infra/runtime-guard.ts:12` | `{ major: 22, minor: 16, patch: 0 }` → `{ major: 22, minor: 13, patch: 0 }` |
+
+**Note:** Should upgrade Node to 22.16+ eventually and remove this patch.
+
+**Merge risk:** LOW — single constant, will be clobbered on every upstream merge.
+
+---
+
+## Patch 14 — DROPPED (2026-03-12)
+
+Consolidated into Patch 1, which is itself DROPPED. No model patches remain.

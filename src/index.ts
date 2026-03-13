@@ -1,5 +1,10 @@
 #!/usr/bin/env node
 import process from "node:process";
+
+// Strip CLAUDECODE so ACP agents (acpx → claude-agent-acp → claude CLI) never
+// see the nested-session guard. This env var is set when openclaw itself runs
+// inside a Claude Code session (e.g. during development).
+delete process.env.CLAUDECODE;
 import { fileURLToPath } from "node:url";
 import { getReplyFromConfig } from "./auto-reply/reply.js";
 import { applyTemplate } from "./auto-reply/templating.js";
@@ -82,6 +87,14 @@ if (isMain) {
   installUnhandledRejectionHandler();
 
   process.on("uncaughtException", (error) => {
+    const message = String(error?.message ?? error);
+    // Carbon GatewayPlugin throws "Max reconnect attempts" directly instead of
+    // emitting it as an event. This is non-fatal — the health monitor will
+    // restart the affected bot. Don't crash the entire gateway.
+    if (message.includes("Max reconnect attempts")) {
+      console.warn("[openclaw] Discord gateway reconnect limit reached (non-fatal):", message);
+      return;
+    }
     console.error("[openclaw] Uncaught exception:", formatUncaughtError(error));
     process.exit(1);
   });

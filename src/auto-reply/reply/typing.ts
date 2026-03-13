@@ -25,7 +25,7 @@ export function createTypingController(params: {
     onReplyStart,
     onCleanup,
     typingIntervalSeconds = 6,
-    typingTtlMs = 2 * 60_000,
+    typingTtlMs = 240 * 60_000, // 4 hours — supports long-running ACP turns with idle periods
     silentToken = SILENT_REPLY_TOKEN,
     log,
   } = params;

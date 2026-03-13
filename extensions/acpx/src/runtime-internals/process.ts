@@ -139,10 +139,11 @@ export function spawnWithResolvedCommand(
     options,
   );
 
-  const childEnv = omitEnvKeysCaseInsensitive(
-    process.env,
-    params.stripProviderAuthEnvVars ? listKnownProviderAuthEnvVarNames() : [],
-  );
+  const childEnv = omitEnvKeysCaseInsensitive(process.env, [
+    // Always strip CLAUDECODE so nested Claude CLI sessions don't refuse to start.
+    "CLAUDECODE",
+    ...(params.stripProviderAuthEnvVars ? listKnownProviderAuthEnvVarNames() : []),
+  ]);
   childEnv.OPENCLAW_SHELL = "acp";
 
   return spawn(resolved.command, resolved.args, {
