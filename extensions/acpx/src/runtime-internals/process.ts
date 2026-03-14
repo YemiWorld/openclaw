@@ -128,6 +128,7 @@ export function spawnWithResolvedCommand(
     args: string[];
     cwd: string;
     stripProviderAuthEnvVars?: boolean;
+    extraEnv?: Record<string, string>;
   },
   options?: SpawnCommandOptions,
 ): ChildProcessWithoutNullStreams {
@@ -145,6 +146,11 @@ export function spawnWithResolvedCommand(
     ...(params.stripProviderAuthEnvVars ? listKnownProviderAuthEnvVarNames() : []),
   ]);
   childEnv.OPENCLAW_SHELL = "acp";
+  if (params.extraEnv) {
+    for (const [key, value] of Object.entries(params.extraEnv)) {
+      childEnv[key] = value;
+    }
+  }
 
   return spawn(resolved.command, resolved.args, {
     cwd: params.cwd,
@@ -191,6 +197,7 @@ export async function spawnAndCollect(
     args: string[];
     cwd: string;
     stripProviderAuthEnvVars?: boolean;
+    extraEnv?: Record<string, string>;
   },
   options?: SpawnCommandOptions,
   runtime?: {

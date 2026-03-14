@@ -465,3 +465,55 @@ Lowered the hard guard to allow startup.
 ## Patch 14 — DROPPED (2026-03-12)
 
 Consolidated into Patch 1, which is itself DROPPED. No model patches remain.
+
+---
+
+## Patch 15 — Per-Agent Model Selection via CLAUDE_CONFIG_DIR
+
+**Purpose:** ACP agents `claude` and `claude-opus` must run different Claude models (Sonnet vs
+Opus). `settings.json` `"model"` key overrides all other model selection (including
+`_meta.claudeCode.options.model` and `/acp model`), so runtime model switching is ineffective.
+Solution: spawn `claude-opus` agent with `CLAUDE_CONFIG_DIR` pointing to a separate config
+directory (`~/.claude-opus/`) containing its own `settings.json` with `"model": "opus"`.
+
+**Files:**
+
+| File                                                       | Change                                                                  |
+| ---------------------------------------------------------- | ----------------------------------------------------------------------- |
+| `extensions/acpx/src/runtime.ts`                           | `resolveAgentExtraEnv()` method + threaded through all 8 spawn sites    |
+| `extensions/acpx/src/runtime-internals/process.ts:129-153` | `extraEnv?: Record<string,string>` param on spawn functions             |
+
+**Config files (outside repo):**
+
+| File                                 | Content                         |
+| ------------------------------------ | ------------------------------- |
+| `~/.claude/settings.json`            | `"model": "sonnet"` (default)   |
+| `~/.claude-opus/settings.json`       | `"model": "opus"`               |
+| `~/.claude-opus/.credentials.json`   | Copy of `~/.claude/.credentials.json` |
+
+**Key snippet — `runtime.ts`:**
+
+```typescript
+private resolveAgentExtraEnv(agent: string): Record<string, string> | undefined {
+  if (agent === "claude-opus") {
+    return { CLAUDE_CONFIG_DIR: pathJoin(homedir(), ".claude-opus") };
+  }
+  return undefined;
+}
+```
+
+**Key snippet — `process.ts` (`spawnWithResolvedCommand`):**
+
+```typescript
+if (params.extraEnv) {
+  for (const [key, value] of Object.entries(params.extraEnv)) {
+    childEnv[key] = value;
+  }
+}
+```
+
+**How it works:** `claude-agent-acp` reads `CLAUDE_CONFIG_DIR` (line 11 of `acp-agent.js`) to
+locate `settings.json` and `.credentials.json`. By redirecting `claude-opus` to `~/.claude-opus/`,
+it picks up `"model": "opus"` while `claude` uses the default `~/.claude/` with `"model": "sonnet"`.
+
+**Merge risk:** LOW — additive `extraEnv` parameter + small method, no conflict with upstream.
