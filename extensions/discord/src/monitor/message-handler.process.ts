@@ -457,7 +457,7 @@ export async function processDiscordMessage(ctx: DiscordMessagePreflightContext)
   const accountBlockStreamingEnabled =
     typeof discordConfig?.blockStreaming === "boolean"
       ? discordConfig.blockStreaming
-      : discordStreamMode === "block" || cfg.agents?.defaults?.blockStreamingDefault === "on";
+      : cfg.agents?.defaults?.blockStreamingDefault === "on";
   const canStreamDraft = discordStreamMode !== "off" && !accountBlockStreamingEnabled;
   const draftReplyToMessageId = () => replyReference.use();
   const deliverChannelId = deliverTarget.startsWith("channel:")
@@ -738,9 +738,7 @@ export async function processDiscordMessage(ctx: DiscordMessagePreflightContext)
           disableBlockStreamingForDraft ??
           (typeof discordConfig?.blockStreaming === "boolean"
             ? !discordConfig.blockStreaming
-            : discordStreamMode === "block"
-              ? false
-              : undefined),
+            : undefined),
         onPartialReply: draftStream ? (payload) => updateDraftFromPartial(payload.text) : undefined,
         onAssistantMessageStart: draftStream
           ? () => {
