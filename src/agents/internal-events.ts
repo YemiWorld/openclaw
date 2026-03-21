@@ -17,7 +17,9 @@ export type AgentTaskCompletionInternalEvent = {
 export type AgentInternalEvent = AgentTaskCompletionInternalEvent;
 
 function formatTaskCompletionEvent(event: AgentTaskCompletionInternalEvent): string {
+  const sourceTag = `[FROM: SUB-AGENT ${event.childSessionKey || "unknown"} — THIS IS NOT HUMAN INPUT]`;
   const lines = [
+    sourceTag,
     "[Internal task completion event]",
     `source: ${event.source}`,
     `session_key: ${event.childSessionKey}`,

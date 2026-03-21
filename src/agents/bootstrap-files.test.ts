@@ -60,7 +60,7 @@ describe("resolveBootstrapFilesForRun", () => {
     registerExtraBootstrapFileHook();
 
     const workspaceDir = await makeTempWorkspace("openclaw-bootstrap-");
-    const files = await resolveBootstrapFilesForRun({ workspaceDir });
+    const { files } = await resolveBootstrapFilesForRun({ workspaceDir });
 
     expect(files.some((file) => file.path === path.join(workspaceDir, "EXTRA.md"))).toBe(true);
   });
@@ -70,7 +70,7 @@ describe("resolveBootstrapFilesForRun", () => {
 
     const workspaceDir = await makeTempWorkspace("openclaw-bootstrap-");
     const warnings: string[] = [];
-    const files = await resolveBootstrapFilesForRun({
+    const { files } = await resolveBootstrapFilesForRun({
       workspaceDir,
       warn: (message) => warnings.push(message),
     });
@@ -104,7 +104,7 @@ describe("resolveBootstrapContextForRun", () => {
     await fs.writeFile(path.join(workspaceDir, "HEARTBEAT.md"), "check inbox", "utf8");
     await fs.writeFile(path.join(workspaceDir, "SOUL.md"), "persona", "utf8");
 
-    const files = await resolveBootstrapFilesForRun({
+    const { files } = await resolveBootstrapFilesForRun({
       workspaceDir,
       contextMode: "lightweight",
       runKind: "heartbeat",
@@ -118,7 +118,7 @@ describe("resolveBootstrapContextForRun", () => {
     const workspaceDir = await makeTempWorkspace("openclaw-bootstrap-");
     await fs.writeFile(path.join(workspaceDir, "HEARTBEAT.md"), "check inbox", "utf8");
 
-    const files = await resolveBootstrapFilesForRun({
+    const { files } = await resolveBootstrapFilesForRun({
       workspaceDir,
       contextMode: "lightweight",
       runKind: "cron",

@@ -8,8 +8,11 @@ import {
   resolveBootstrapTotalMaxChars,
 } from "./pi-embedded-helpers.js";
 import {
+  buildDispatchExtraContextString,
   filterBootstrapFilesForSession,
+  loadDispatchBootstrapFiles,
   loadWorkspaceBootstrapFiles,
+  type DispatchContextEntry,
   type WorkspaceBootstrapFile,
 } from "./workspace.js";
 
@@ -63,6 +66,7 @@ function applyContextModeFilter(params: {
 
 export async function resolveBootstrapFilesForRun(params: {
   workspaceDir: string;
+  dispatchDir?: string;
   config?: OpenClawConfig;
   sessionKey?: string;
   sessionId?: string;
@@ -70,7 +74,10 @@ export async function resolveBootstrapFilesForRun(params: {
   warn?: (message: string) => void;
   contextMode?: BootstrapContextMode;
   runKind?: BootstrapContextRunKind;
-}): Promise<WorkspaceBootstrapFile[]> {
+}): Promise<{
+  files: WorkspaceBootstrapFile[];
+  dispatchExtraContext: DispatchContextEntry[];
+}> {
   const sessionKey = params.sessionKey ?? params.sessionId;
   const rawFiles = params.sessionKey
     ? await getOrLoadBootstrapFiles({
@@ -78,11 +85,25 @@ export async function resolveBootstrapFilesForRun(params: {
         sessionKey: params.sessionKey,
       })
     : await loadWorkspaceBootstrapFiles(params.workspaceDir);
-  const bootstrapFiles = applyContextModeFilter({
+  let bootstrapFiles = applyContextModeFilter({
     files: filterBootstrapFilesForSession(rawFiles, sessionKey),
     contextMode: params.contextMode,
     runKind: params.runKind,
   });
+
+  // Merge dispatch bootstrap overrides (SPOOL→SOUL, user→USER, MEMORY)
+  let dispatchExtraContext: DispatchContextEntry[] = [];
+  if (params.dispatchDir) {
+    const dispatch = await loadDispatchBootstrapFiles(params.dispatchDir);
+    if (dispatch.bootstrapOverrides.length > 0) {
+      const overrideNames = new Set(dispatch.bootstrapOverrides.map((f) => f.name));
+      // Remove workspace files that are being overridden by dispatch
+      bootstrapFiles = bootstrapFiles.filter((f) => !overrideNames.has(f.name));
+      // Add dispatch overrides
+      bootstrapFiles = [...bootstrapFiles, ...dispatch.bootstrapOverrides];
+    }
+    dispatchExtraContext = dispatch.extraContext;
+  }
 
   const updated = await applyBootstrapHookOverrides({
     files: bootstrapFiles,
@@ -92,11 +113,15 @@ export async function resolveBootstrapFilesForRun(params: {
     sessionId: params.sessionId,
     agentId: params.agentId,
   });
-  return sanitizeBootstrapFiles(updated, params.warn);
+  return {
+    files: sanitizeBootstrapFiles(updated, params.warn),
+    dispatchExtraContext,
+  };
 }
 
 export async function resolveBootstrapContextForRun(params: {
   workspaceDir: string;
+  dispatchDir?: string;
   config?: OpenClawConfig;
   sessionKey?: string;
   sessionId?: string;
@@ -107,12 +132,19 @@ export async function resolveBootstrapContextForRun(params: {
 }): Promise<{
   bootstrapFiles: WorkspaceBootstrapFile[];
   contextFiles: EmbeddedContextFile[];
+  dispatchExtraContext: string;
 }> {
-  const bootstrapFiles = await resolveBootstrapFilesForRun(params);
+  const { files: bootstrapFiles, dispatchExtraContext } = await resolveBootstrapFilesForRun(params);
   const contextFiles = buildBootstrapContextFiles(bootstrapFiles, {
     maxChars: resolveBootstrapMaxChars(params.config),
     totalMaxChars: resolveBootstrapTotalMaxChars(params.config),
     warn: params.warn,
   });
-  return { bootstrapFiles, contextFiles };
+  return {
+    bootstrapFiles,
+    contextFiles,
+    dispatchExtraContext: buildDispatchExtraContextString(dispatchExtraContext),
+  };
 }
+
+export { type DispatchContextEntry } from "./workspace.js";

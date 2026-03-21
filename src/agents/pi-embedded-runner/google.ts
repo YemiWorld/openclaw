@@ -140,6 +140,79 @@ function annotateInterSessionUserMessages(messages: AgentMessage[]): AgentMessag
   return touched ? out : messages;
 }
 
+const HUMAN_USER_PREFIX = "[FROM: HUMAN USER]";
+
+function annotateHumanUserMessages(messages: AgentMessage[]): AgentMessage[] {
+  let touched = false;
+  const out: AgentMessage[] = [];
+  for (const msg of messages) {
+    const role = (msg as { role?: unknown }).role;
+    if (role !== "user") {
+      out.push(msg);
+      continue;
+    }
+    // Inter-session messages are already tagged by annotateInterSessionUserMessages.
+    if (hasInterSessionUserProvenance(msg as { role?: unknown; provenance?: unknown })) {
+      out.push(msg);
+      continue;
+    }
+    // Internal system provenance should not be tagged as human.
+    const provenance = normalizeInputProvenance((msg as { provenance?: unknown }).provenance);
+    if (provenance?.kind === "internal_system") {
+      out.push(msg);
+      continue;
+    }
+    const user = msg as Extract<AgentMessage, { role: "user" }>;
+    if (typeof user.content === "string") {
+      if (user.content.startsWith(HUMAN_USER_PREFIX)) {
+        out.push(msg);
+        continue;
+      }
+      touched = true;
+      out.push({
+        ...(msg as unknown as Record<string, unknown>),
+        content: `${HUMAN_USER_PREFIX}\n${user.content}`,
+      } as AgentMessage);
+      continue;
+    }
+    if (!Array.isArray(user.content)) {
+      out.push(msg);
+      continue;
+    }
+    const textIndex = user.content.findIndex(
+      (block) =>
+        block &&
+        typeof block === "object" &&
+        (block as { type?: unknown }).type === "text" &&
+        typeof (block as { text?: unknown }).text === "string",
+    );
+    if (textIndex >= 0) {
+      const existing = user.content[textIndex] as { type: "text"; text: string };
+      if (existing.text.startsWith(HUMAN_USER_PREFIX)) {
+        out.push(msg);
+        continue;
+      }
+      const nextContent = [...user.content];
+      nextContent[textIndex] = {
+        ...existing,
+        text: `${HUMAN_USER_PREFIX}\n${existing.text}`,
+      };
+      touched = true;
+      out.push({
+        ...(msg as unknown as Record<string, unknown>),
+        content: nextContent,
+      } as AgentMessage);
+      continue;
+    }
+    touched = true;
+    out.push({
+      ...(msg as unknown as Record<string, unknown>),
+      content: [{ type: "text", text: HUMAN_USER_PREFIX }, ...user.content],
+    } as AgentMessage);
+  }
+  return touched ? out : messages;
+}
+
 function parseMessageTimestamp(value: unknown): number | null {
   if (typeof value === "number" && Number.isFinite(value)) {
     return value;
@@ -537,18 +610,15 @@ export async function sanitizeSessionHistory(params: {
       modelId: params.modelId,
     });
   const withInterSessionMarkers = annotateInterSessionUserMessages(params.messages);
-  const sanitizedImages = await sanitizeSessionMessagesImages(
-    withInterSessionMarkers,
-    "session:history",
-    {
-      sanitizeMode: policy.sanitizeMode,
-      sanitizeToolCallIds: policy.sanitizeToolCallIds,
-      toolCallIdMode: policy.toolCallIdMode,
-      preserveSignatures: policy.preserveSignatures,
-      sanitizeThoughtSignatures: policy.sanitizeThoughtSignatures,
-      ...resolveImageSanitizationLimits(params.config),
-    },
-  );
+  const withHumanMarkers = annotateHumanUserMessages(withInterSessionMarkers);
+  const sanitizedImages = await sanitizeSessionMessagesImages(withHumanMarkers, "session:history", {
+    sanitizeMode: policy.sanitizeMode,
+    sanitizeToolCallIds: policy.sanitizeToolCallIds,
+    toolCallIdMode: policy.toolCallIdMode,
+    preserveSignatures: policy.preserveSignatures,
+    sanitizeThoughtSignatures: policy.sanitizeThoughtSignatures,
+    ...resolveImageSanitizationLimits(params.config),
+  });
   const droppedThinking = policy.dropThinkingBlocks
     ? dropThinkingBlocks(sanitizedImages)
     : sanitizedImages;

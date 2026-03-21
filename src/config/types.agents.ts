@@ -64,6 +64,8 @@ export type AgentConfig = {
   name?: string;
   workspace?: string;
   agentDir?: string;
+  /** Optional path to a judah-dispatch node directory for per-agent bootstrap context. */
+  dispatchDir?: string;
   model?: AgentModelConfig;
   /** Optional allowlist of skills for this agent (omit = all skills; empty = none). */
   skills?: string[];

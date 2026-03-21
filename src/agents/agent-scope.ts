@@ -29,6 +29,7 @@ type ResolvedAgentConfig = {
   name?: string;
   workspace?: string;
   agentDir?: string;
+  dispatchDir?: string;
   model?: AgentEntry["model"];
   skills?: AgentEntry["skills"];
   memorySearch?: AgentEntry["memorySearch"];
@@ -128,6 +129,7 @@ export function resolveAgentConfig(
     name: typeof entry.name === "string" ? entry.name : undefined,
     workspace: typeof entry.workspace === "string" ? entry.workspace : undefined,
     agentDir: typeof entry.agentDir === "string" ? entry.agentDir : undefined,
+    dispatchDir: typeof entry.dispatchDir === "string" ? entry.dispatchDir : undefined,
     model:
       typeof entry.model === "string" || (entry.model && typeof entry.model === "object")
         ? entry.model
@@ -335,4 +337,28 @@ export function resolveAgentDir(cfg: OpenClawConfig, agentId: string) {
   }
   const root = resolveStateDir(process.env);
   return path.join(root, "agents", id, "agent");
+}
+
+/**
+ * Resolve the optional dispatch directory for an agent.
+ * Returns undefined when the agent has no dispatchDir configured and no agentDir fallback.
+ *
+ * Resolution order:
+ * 1. Explicit `dispatchDir` in agent config
+ * 2. Fall back to `agentDir` (node directories serve as dispatch dirs)
+ */
+export function resolveAgentDispatchDir(cfg: OpenClawConfig, agentId: string): string | undefined {
+  const id = normalizeAgentId(agentId);
+  const agentCfg = resolveAgentConfig(cfg, id);
+  // 1. Explicit dispatchDir in agent config
+  const configured = agentCfg?.dispatchDir?.trim();
+  if (configured) {
+    return resolveUserPath(configured);
+  }
+  // 2. Fall back to agentDir (node directories serve as dispatch dirs)
+  const agentDirFallback = agentCfg?.agentDir?.trim();
+  if (agentDirFallback) {
+    return resolveUserPath(agentDirFallback);
+  }
+  return undefined;
 }

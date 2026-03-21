@@ -639,3 +639,126 @@ export async function loadExtraBootstrapFilesWithDiagnostics(
   }
   return { files, diagnostics };
 }
+
+// ---------------------------------------------------------------------------
+// Dispatch bootstrap files — per-agent context from judah-dispatch node dirs
+// ---------------------------------------------------------------------------
+
+/**
+ * Mapping from dispatch-specific filenames to standard bootstrap names.
+ * Files listed here override the equivalent workspace bootstrap file.
+ */
+const DISPATCH_FILE_MAPPING: Record<string, WorkspaceBootstrapFileName> = {
+  "SPOOL.md": DEFAULT_SOUL_FILENAME,
+  "user.md": DEFAULT_USER_FILENAME,
+  "MEMORY.md": DEFAULT_MEMORY_FILENAME,
+};
+
+/**
+ * Extra dispatch context files that have no workspace bootstrap equivalent.
+ * Each is loaded as-is and injected with its header into the system prompt.
+ */
+const DISPATCH_EXTRA_FILES: Array<{ filename: string; header: string }> = [
+  { filename: "evergreen_memory.md", header: "[EVERGREEN MEMORY]" },
+  { filename: "living_memory.md", header: "[LIVING MEMORY]" },
+  { filename: "command_que.md", header: "[COMMAND QUEUE]" },
+];
+
+export type DispatchContextEntry = {
+  header: string;
+  content: string;
+  sourcePath: string;
+};
+
+/**
+ * Read a file directly from a dispatch directory (no boundary enforcement,
+ * since dispatchDir is an explicit config path trusted by the operator).
+ */
+async function readDispatchFile(filePath: string): Promise<string | null> {
+  try {
+    const stat = syncFs.statSync(filePath);
+    if (!stat.isFile() || stat.size > MAX_WORKSPACE_BOOTSTRAP_FILE_BYTES) {
+      return null;
+    }
+    return await fs.readFile(filePath, "utf-8");
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Load dispatch bootstrap files from a per-agent dispatch directory.
+ *
+ * Returns:
+ * - `bootstrapOverrides`: files that map to standard bootstrap names (SOUL, USER, MEMORY)
+ *   and should override workspace equivalents.
+ * - `extraContext`: additional context entries (evergreen_memory, living_memory, command_que,
+ *   cabinet files) to be injected into the system prompt.
+ */
+export async function loadDispatchBootstrapFiles(dispatchDir: string): Promise<{
+  bootstrapOverrides: WorkspaceBootstrapFile[];
+  extraContext: DispatchContextEntry[];
+}> {
+  const resolvedDir = resolveUserPath(dispatchDir);
+  const bootstrapOverrides: WorkspaceBootstrapFile[] = [];
+  const extraContext: DispatchContextEntry[] = [];
+
+  // 1. Load mapped files (SPOOL.md → SOUL.md, user.md → USER.md, MEMORY.md → MEMORY.md)
+  for (const [dispatchName, bootstrapName] of Object.entries(DISPATCH_FILE_MAPPING)) {
+    const filePath = path.join(resolvedDir, dispatchName);
+    const content = await readDispatchFile(filePath);
+    if (content != null) {
+      bootstrapOverrides.push({
+        name: bootstrapName,
+        path: filePath,
+        content,
+        missing: false,
+      });
+    }
+  }
+
+  // 2. Load extra context files
+  for (const { filename, header } of DISPATCH_EXTRA_FILES) {
+    const filePath = path.join(resolvedDir, filename);
+    const content = await readDispatchFile(filePath);
+    if (content != null && content.trim().length > 0) {
+      extraContext.push({ header, content, sourcePath: filePath });
+    }
+  }
+
+  // 3. Load all .md files from cabinet/ subdirectory
+  const cabinetDir = path.join(resolvedDir, "cabinet");
+  try {
+    const entries = await fs.readdir(cabinetDir, { withFileTypes: true });
+    for (const entry of entries) {
+      if (!entry.isFile() || !entry.name.endsWith(".md")) {
+        continue;
+      }
+      const filePath = path.join(cabinetDir, entry.name);
+      const content = await readDispatchFile(filePath);
+      if (content != null && content.trim().length > 0) {
+        const label = entry.name.replace(/\.md$/i, "");
+        extraContext.push({
+          header: `[CABINET: ${label}]`,
+          content,
+          sourcePath: filePath,
+        });
+      }
+    }
+  } catch {
+    // cabinet/ directory missing — that's fine
+  }
+
+  return { bootstrapOverrides, extraContext };
+}
+
+/**
+ * Build a single string from dispatch extra context entries suitable for
+ * injection into the system prompt (as extraSystemPrompt or appended context).
+ */
+export function buildDispatchExtraContextString(entries: DispatchContextEntry[]): string {
+  if (entries.length === 0) {
+    return "";
+  }
+  return entries.map((e) => `${e.header}\n${e.content}`).join("\n\n");
+}

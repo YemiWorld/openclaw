@@ -478,18 +478,18 @@ directory (`~/.claude-opus/`) containing its own `settings.json` with `"model": 
 
 **Files:**
 
-| File                                                       | Change                                                                  |
-| ---------------------------------------------------------- | ----------------------------------------------------------------------- |
-| `extensions/acpx/src/runtime.ts`                           | `resolveAgentExtraEnv()` method + threaded through all 8 spawn sites    |
-| `extensions/acpx/src/runtime-internals/process.ts:129-153` | `extraEnv?: Record<string,string>` param on spawn functions             |
+| File                                                       | Change                                                               |
+| ---------------------------------------------------------- | -------------------------------------------------------------------- |
+| `extensions/acpx/src/runtime.ts`                           | `resolveAgentExtraEnv()` method + threaded through all 8 spawn sites |
+| `extensions/acpx/src/runtime-internals/process.ts:129-153` | `extraEnv?: Record<string,string>` param on spawn functions          |
 
 **Config files (outside repo):**
 
-| File                                 | Content                         |
-| ------------------------------------ | ------------------------------- |
-| `~/.claude/settings.json`            | `"model": "sonnet"` (default)   |
-| `~/.claude-opus/settings.json`       | `"model": "opus"`               |
-| `~/.claude-opus/.credentials.json`   | Copy of `~/.claude/.credentials.json` |
+| File                               | Content                               |
+| ---------------------------------- | ------------------------------------- |
+| `~/.claude/settings.json`          | `"model": "sonnet"` (default)         |
+| `~/.claude-opus/settings.json`     | `"model": "opus"`                     |
+| `~/.claude-opus/.credentials.json` | Copy of `~/.claude/.credentials.json` |
 
 **Key snippet — `runtime.ts`:**
 
@@ -517,3 +517,110 @@ locate `settings.json` and `.credentials.json`. By redirecting `claude-opus` to 
 it picks up `"model": "opus"` while `claude` uses the default `~/.claude/` with `"model": "sonnet"`.
 
 **Merge risk:** LOW — additive `extraEnv` parameter + small method, no conflict with upstream.
+
+---
+
+## Patch 16 — openviking-claw Context Engine Bridge Plugin (2026-03-20)
+
+**Purpose:** Connect openclaw's pluggable `contextEngine` slot to OpenViking's persistent semantic
+memory HTTP API (port 1933). Replaces lossless-claw as the active context engine.
+
+**Status:** ACTIVE — gateway starts clean, contextEngine slot set to `"openviking"`.
+
+**Files:**
+
+| File                                                          | Change                                                                                   |
+| ------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| `~/.openclaw/extensions/openviking-claw/dist/index.js`        | Plugin implementation — ContextEngine bridge                                             |
+| `~/.openclaw/extensions/openviking-claw/package.json`         | Package manifest (ESM, type: module)                                                     |
+| `~/.openclaw/extensions/openviking-claw/openclaw.plugin.json` | Plugin config schema                                                                     |
+| `~/.openclaw/openclaw.json`                                   | `plugins.allow` + `plugins.slots.contextEngine` + `plugins.entries` + `plugins.installs` |
+
+**What the plugin does:**
+
+- `bootstrap`: GET `/api/v1/sessions/{id}` — creates session via POST if 404
+- `ingest`: POST `/api/v1/sessions/{id}/messages` — sends each message to OpenViking
+- `assemble`: POST `/api/v1/search/find` — retrieves top-K relevant memories, prepends as `systemPromptAddition`
+- `compact`: POST `/api/v1/sessions/{id}/extract` then `/commit` — extracts and commits memories
+
+**Graceful fallback:** All operations are wrapped in try/catch. If OpenViking is unreachable (ECONNREFUSED or timeout), all methods return safe no-op values — openclaw continues normally.
+
+**openclaw.json changes:**
+
+```json
+"plugins.allow": [..., "openviking-claw"],
+"plugins.slots.contextEngine": "openviking",
+"plugins.entries.openviking-claw": { "enabled": true, "config": { "serviceUrl": "http://127.0.0.1:1933", "topK": 8, "fallbackOnError": true } },
+"plugins.installs.openviking-claw": { "source": "path", "installPath": "C:\\Users\\Administrator\\.openclaw\\extensions\\openviking-claw" }
+```
+
+**Engine ID:** `"openviking"` (registered via `api.registerContextEngine("openviking", ...)`)
+
+**Merge risk:** NONE — entirely external plugin + config file edit only. No openclaw source code modified.
+
+---
+
+## Patch 17 — Sub-agent Source Tagging (2026-03-21)
+
+**Purpose:** Sub-agent completion messages arrive as `role: "user"` and are indistinguishable from
+human messages at the model API level. The internal `inputProvenance` metadata is never visible to
+the model. This causes the model to confuse sub-agent status updates with human input, leading to
+ignored human messages. Solution: prepend visible `[FROM: ...]` source tags to message content.
+
+**Files:**
+
+| File                                      | Change                                                                                                                                       |
+| ----------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| `src/agents/subagent-announce.ts`         | `formatUntrustedChildResult()` and `buildDescendantWakeMessage()` prepend `[FROM: SUB-AGENT {sessionKey} — THIS IS NOT HUMAN INPUT]`         |
+| `src/agents/internal-events.ts`           | `formatTaskCompletionEvent()` prepends the same sub-agent source tag                                                                         |
+| `src/agents/pi-embedded-runner/google.ts` | Added `annotateHumanUserMessages()` — tags user messages with `[FROM: HUMAN USER]`; called from `sanitizeSessionHistory()` for all providers |
+
+**Key details:**
+
+- `<<<UNTRUSTED>>>` markers preserved for backward compat — `[FROM:]` tags are added above them
+- `annotateHumanUserMessages()` runs for ALL providers (called from `sanitizeSessionHistory()`)
+- Only modifies model-facing transcript at send time, not stored session data
+- Idempotent: checks for existing prefix before prepending
+
+**Merge risk:** LOW — additive text annotation changes only. No structural modifications.
+
+---
+
+## Patch 18 — Dispatch Bootstrap Path (2026-03-21)
+
+**Purpose:** Load per-agent context files from judah-dispatch `nodes/` directories into
+openclaw's bootstrap pipeline. Each agent's `dispatchDir` contains custom identity (SPOOL.md),
+memory, and context files that get injected into the system prompt alongside or overriding
+workspace bootstrap files.
+
+**Config field:** `dispatchDir` on `AgentEntrySchema` — optional path to a dispatch node dir.
+
+**File mapping:**
+
+| Dispatch File | Maps To     | Behavior                     |
+| ------------- | ----------- | ---------------------------- |
+| `SPOOL.md`    | `SOUL.md`   | Replaces workspace SOUL.md   |
+| `user.md`     | `USER.md`   | Replaces workspace USER.md   |
+| `MEMORY.md`   | `MEMORY.md` | Replaces workspace MEMORY.md |
+
+**Extra context (injected via `extraSystemPrompt`):**
+
+| File                  | Header                  |
+| --------------------- | ----------------------- |
+| `evergreen_memory.md` | `[EVERGREEN MEMORY]`    |
+| `living_memory.md`    | `[LIVING MEMORY]`       |
+| `command_que.md`      | `[COMMAND QUEUE]`       |
+| `cabinet/*.md`        | `[CABINET: {filename}]` |
+
+**Files:**
+
+| File                                           | Change                                                                              |
+| ---------------------------------------------- | ----------------------------------------------------------------------------------- |
+| `src/config/zod-schema.agent-runtime.ts`       | Added `dispatchDir` to `AgentEntrySchema`                                           |
+| `src/agents/agent-scope.ts`                    | Added `dispatchDir` to `ResolvedAgentConfig`, added `resolveAgentDispatchDir()`     |
+| `src/agents/workspace.ts`                      | Added `loadDispatchBootstrapFiles()`, `buildDispatchExtraContextString()`           |
+| `src/agents/bootstrap-files.ts`                | Wired dispatch into `resolveBootstrapFilesForRun` / `resolveBootstrapContextForRun` |
+| `src/agents/pi-embedded-runner/run/attempt.ts` | Resolve dispatchDir, pass to bootstrap, merge with extraSystemPrompt                |
+| `src/agents/bootstrap-files.test.ts`           | Updated for new return type                                                         |
+
+**Merge risk:** LOW — all changes are additive. No behavior change when `dispatchDir` is unset.
