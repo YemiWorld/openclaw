@@ -1,3 +1,10 @@
+import {
+  resolvePayloadMediaUrls,
+  sendPayloadMediaSequence,
+  sendPayloadMediaSequenceAndFinalize,
+  sendPayloadMediaSequenceOrFallback,
+  sendTextMediaPayload,
+} from "openclaw/plugin-sdk/reply-payload";
 import { chunkText } from "../../../auto-reply/chunk.js";
 import type { OpenClawConfig } from "../../../config/config.js";
 import type { OutboundSendDeps } from "../../../infra/outbound/deliver.js";
@@ -11,9 +18,6 @@ type DirectSendOptions = {
   mediaUrl?: string;
   mediaLocalRoots?: readonly string[];
   maxBytes?: number;
-  buffer?: Buffer | string;
-  contentType?: string;
-  filename?: string;
 };
 
 type DirectSendResult = { messageId: string; [key: string]: unknown };
@@ -23,96 +27,13 @@ type DirectSendFn<TOpts extends Record<string, unknown>, TResult extends DirectS
   text: string,
   opts: TOpts,
 ) => Promise<TResult>;
-
-type SendPayloadContext = Parameters<NonNullable<ChannelOutboundAdapter["sendPayload"]>>[0];
-type SendPayloadResult = Awaited<ReturnType<NonNullable<ChannelOutboundAdapter["sendPayload"]>>>;
-type SendPayloadAdapter = Pick<
-  ChannelOutboundAdapter,
-  "sendMedia" | "sendText" | "chunker" | "textChunkLimit"
->;
-
-export function resolvePayloadMediaUrls(payload: SendPayloadContext["payload"]): string[] {
-  return payload.mediaUrls?.length ? payload.mediaUrls : payload.mediaUrl ? [payload.mediaUrl] : [];
-}
-
-export async function sendPayloadMediaSequence<TResult>(params: {
-  text: string;
-  mediaUrls: readonly string[];
-  send: (input: {
-    text: string;
-    mediaUrl: string;
-    index: number;
-    isFirst: boolean;
-  }) => Promise<TResult>;
-}): Promise<TResult | undefined> {
-  let lastResult: TResult | undefined;
-  for (let i = 0; i < params.mediaUrls.length; i += 1) {
-    const mediaUrl = params.mediaUrls[i];
-    if (!mediaUrl) {
-      continue;
-    }
-    lastResult = await params.send({
-      text: i === 0 ? params.text : "",
-      mediaUrl,
-      index: i,
-      isFirst: i === 0,
-    });
-  }
-  return lastResult;
-}
-
-export async function sendTextMediaPayload(params: {
-  channel: string;
-  ctx: SendPayloadContext;
-  adapter: SendPayloadAdapter;
-}): Promise<SendPayloadResult> {
-  const text = params.ctx.payload.text ?? "";
-  const urls = resolvePayloadMediaUrls(params.ctx.payload);
-  // Check for buffer-based attachment (buffer + contentType + filename)
-  const buffer = params.ctx.payload.buffer;
-  const contentType = params.ctx.payload.contentType;
-  const filename = params.ctx.payload.filename;
-  const hasBuffer =
-    typeof buffer === "string" &&
-    buffer.length > 0 &&
-    typeof contentType === "string" &&
-    contentType.length > 0;
-  if (!text && urls.length === 0 && !hasBuffer) {
-    return { channel: params.channel, messageId: "" };
-  }
-  // Handle buffer-based media upload if available
-  if (hasBuffer) {
-    const bufferData = Buffer.from(buffer, "base64");
-    return await params.adapter.sendMedia!({
-      ...params.ctx,
-      text,
-      mediaUrl: "", // Empty since we're using buffer
-      buffer: bufferData,
-      contentType,
-      filename: filename ?? "attachment",
-    });
-  }
-  if (urls.length > 0) {
-    const lastResult = await sendPayloadMediaSequence({
-      text,
-      mediaUrls: urls,
-      send: async ({ text, mediaUrl }) =>
-        await params.adapter.sendMedia!({
-          ...params.ctx,
-          text,
-          mediaUrl,
-        }),
-    });
-    return lastResult ?? { channel: params.channel, messageId: "" };
-  }
-  const limit = params.adapter.textChunkLimit;
-  const chunks = limit && params.adapter.chunker ? params.adapter.chunker(text, limit) : [text];
-  let lastResult: Awaited<ReturnType<NonNullable<typeof params.adapter.sendText>>>;
-  for (const chunk of chunks) {
-    lastResult = await params.adapter.sendText!({ ...params.ctx, text: chunk });
-  }
-  return lastResult!;
-}
+export {
+  resolvePayloadMediaUrls,
+  sendPayloadMediaSequence,
+  sendPayloadMediaSequenceAndFinalize,
+  sendPayloadMediaSequenceOrFallback,
+  sendTextMediaPayload,
+} from "openclaw/plugin-sdk/reply-payload";
 
 export function resolveScopedChannelMediaMaxBytes(params: {
   cfg: OpenClawConfig;
@@ -159,9 +80,6 @@ export function createDirectTextMediaOutbound<
     replyToId?: string | null;
     mediaUrl?: string;
     mediaLocalRoots?: readonly string[];
-    buffer?: Buffer | string;
-    contentType?: string;
-    filename?: string;
     buildOptions: (params: DirectSendOptions) => TOpts;
   }) => {
     const send = params.resolveSender(sendParams.deps);
@@ -179,9 +97,6 @@ export function createDirectTextMediaOutbound<
         accountId: sendParams.accountId,
         replyToId: sendParams.replyToId,
         maxBytes,
-        buffer: sendParams.buffer,
-        contentType: sendParams.contentType,
-        filename: sendParams.filename,
       }),
     );
     return { channel: params.channel, ...result };
@@ -205,19 +120,7 @@ export function createDirectTextMediaOutbound<
         buildOptions: params.buildTextOptions,
       });
     },
-    sendMedia: async ({
-      cfg,
-      to,
-      text,
-      mediaUrl,
-      mediaLocalRoots,
-      accountId,
-      deps,
-      replyToId,
-      buffer,
-      contentType,
-      filename,
-    }) => {
+    sendMedia: async ({ cfg, to, text, mediaUrl, mediaLocalRoots, accountId, deps, replyToId }) => {
       return await sendDirect({
         cfg,
         to,
@@ -227,9 +130,6 @@ export function createDirectTextMediaOutbound<
         accountId,
         deps,
         replyToId,
-        buffer,
-        contentType,
-        filename,
         buildOptions: params.buildMediaOptions,
       });
     },

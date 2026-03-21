@@ -5,15 +5,16 @@ import {
   type RequestClient,
 } from "@buape/carbon";
 import { ChannelType, Routes } from "discord-api-types/v10";
-import { loadConfig, type OpenClawConfig } from "../../../src/config/config.js";
-import { recordChannelActivity } from "../../../src/infra/channel-activity.js";
-import { loadWebMedia } from "../../whatsapp/src/media.js";
+import { loadConfig, type OpenClawConfig } from "openclaw/plugin-sdk/config-runtime";
+import { recordChannelActivity } from "openclaw/plugin-sdk/infra-runtime";
+import { loadWebMedia } from "openclaw/plugin-sdk/web-media";
 import { resolveDiscordAccount } from "./accounts.js";
 import { registerDiscordComponentEntries } from "./components-registry.js";
 import {
   buildDiscordComponentMessage,
   buildDiscordComponentMessageFlags,
   resolveDiscordComponentAttachmentName,
+  type DiscordComponentBuildResult,
   type DiscordComponentMessageSpec,
 } from "./components.js";
 import {
@@ -52,11 +53,81 @@ type DiscordComponentSendOpts = {
   mediaUrl?: string;
   mediaLocalRoots?: readonly string[];
   filename?: string;
-  /** Base64-encoded buffer or Buffer for direct attachment upload. */
-  buffer?: Buffer | string;
-  /** MIME content type for buffer-based attachments. */
-  contentType?: string;
 };
+
+export function registerBuiltDiscordComponentMessage(params: {
+  buildResult: DiscordComponentBuildResult;
+  messageId: string;
+}): void {
+  registerDiscordComponentEntries({
+    entries: params.buildResult.entries,
+    modals: params.buildResult.modals,
+    messageId: params.messageId,
+  });
+}
+
+async function buildDiscordComponentPayload(params: {
+  spec: DiscordComponentMessageSpec;
+  opts: DiscordComponentSendOpts;
+  accountId: string;
+}): Promise<{
+  body: ReturnType<typeof stripUndefinedFields>;
+  buildResult: ReturnType<typeof buildDiscordComponentMessage>;
+}> {
+  const buildResult = buildDiscordComponentMessage({
+    spec: params.spec,
+    sessionKey: params.opts.sessionKey,
+    agentId: params.opts.agentId,
+    accountId: params.accountId,
+  });
+  const flags = buildDiscordComponentMessageFlags(buildResult.components);
+  const finalFlags = params.opts.silent
+    ? (flags ?? 0) | SUPPRESS_NOTIFICATIONS_FLAG
+    : (flags ?? undefined);
+  const messageReference = params.opts.replyTo
+    ? { message_id: params.opts.replyTo, fail_if_not_exists: false }
+    : undefined;
+
+  const attachmentNames = extractComponentAttachmentNames(params.spec);
+  const uniqueAttachmentNames = [...new Set(attachmentNames)];
+  if (uniqueAttachmentNames.length > 1) {
+    throw new Error(
+      "Discord component attachments currently support a single file. Use media-gallery for multiple files.",
+    );
+  }
+  const expectedAttachmentName = uniqueAttachmentNames[0];
+  let files: MessagePayloadFile[] | undefined;
+  if (params.opts.mediaUrl) {
+    const media = await loadWebMedia(params.opts.mediaUrl, {
+      localRoots: params.opts.mediaLocalRoots,
+    });
+    const filenameOverride = params.opts.filename?.trim();
+    const fileName = filenameOverride || media.fileName || "upload";
+    if (expectedAttachmentName && expectedAttachmentName !== fileName) {
+      throw new Error(
+        `Component file block expects attachment "${expectedAttachmentName}", but the uploaded file is "${fileName}". Update components.blocks[].file or provide a matching filename.`,
+      );
+    }
+    const fileData = toDiscordFileBlob(media.buffer);
+    files = [{ data: fileData, name: fileName }];
+  } else if (expectedAttachmentName) {
+    throw new Error(
+      "Discord component file blocks require a media attachment (media/path/filePath).",
+    );
+  }
+
+  const payload: MessagePayloadObject = {
+    components: buildResult.components,
+    ...(finalFlags ? { flags: finalFlags } : {}),
+    ...(files ? { files } : {}),
+  };
+  const body = stripUndefinedFields({
+    ...serializePayload(payload),
+    ...(messageReference ? { message_reference: messageReference } : {}),
+  });
+
+  return { body, buildResult };
+}
 
 export async function sendDiscordComponentMessage(
   to: string,
@@ -75,63 +146,10 @@ export async function sendDiscordComponentMessage(
     throw new Error("Discord components are not supported in forum-style channels");
   }
 
-  const buildResult = buildDiscordComponentMessage({
+  const { body, buildResult } = await buildDiscordComponentPayload({
     spec,
-    sessionKey: opts.sessionKey,
-    agentId: opts.agentId,
+    opts,
     accountId: accountInfo.accountId,
-  });
-  const flags = buildDiscordComponentMessageFlags(buildResult.components);
-  const finalFlags = opts.silent
-    ? (flags ?? 0) | SUPPRESS_NOTIFICATIONS_FLAG
-    : (flags ?? undefined);
-  const messageReference = opts.replyTo
-    ? { message_id: opts.replyTo, fail_if_not_exists: false }
-    : undefined;
-
-  const attachmentNames = extractComponentAttachmentNames(spec);
-  const uniqueAttachmentNames = [...new Set(attachmentNames)];
-  if (uniqueAttachmentNames.length > 1) {
-    throw new Error(
-      "Discord component attachments currently support a single file. Use media-gallery for multiple files.",
-    );
-  }
-  const expectedAttachmentName = uniqueAttachmentNames[0];
-  let files: MessagePayloadFile[] | undefined;
-  if (opts.mediaUrl || opts.buffer) {
-    let fileName: string;
-    let fileData: Blob;
-    if (opts.buffer) {
-      const bufferData =
-        typeof opts.buffer === "string" ? Buffer.from(opts.buffer, "base64") : opts.buffer;
-      fileName = opts.filename?.trim() || "attachment";
-      fileData = toDiscordFileBlob(bufferData);
-    } else {
-      const media = await loadWebMedia(opts.mediaUrl!, { localRoots: opts.mediaLocalRoots });
-      const filenameOverride = opts.filename?.trim();
-      fileName = filenameOverride || media.fileName || "upload";
-      fileData = toDiscordFileBlob(media.buffer);
-    }
-    if (expectedAttachmentName && expectedAttachmentName !== fileName) {
-      throw new Error(
-        `Component file block expects attachment "${expectedAttachmentName}", but the uploaded file is "${fileName}". Update components.blocks[].file or provide a matching filename.`,
-      );
-    }
-    files = [{ data: fileData, name: fileName }];
-  } else if (expectedAttachmentName) {
-    throw new Error(
-      "Discord component file blocks require a media attachment (media/path/filePath).",
-    );
-  }
-
-  const payload: MessagePayloadObject = {
-    components: buildResult.components,
-    ...(finalFlags ? { flags: finalFlags } : {}),
-    ...(files ? { files } : {}),
-  };
-  const body = stripUndefinedFields({
-    ...serializePayload(payload),
-    ...(messageReference ? { message_reference: messageReference } : {}),
   });
 
   let result: { id: string; channel_id: string };
@@ -148,13 +166,12 @@ export async function sendDiscordComponentMessage(
       channelId,
       rest,
       token,
-      hasMedia: Boolean(files?.length || opts.buffer),
+      hasMedia: Boolean(opts.mediaUrl),
     });
   }
 
-  registerDiscordComponentEntries({
-    entries: buildResult.entries,
-    modals: buildResult.modals,
+  registerBuiltDiscordComponentMessage({
+    buildResult,
     messageId: result.id,
   });
 
@@ -166,6 +183,58 @@ export async function sendDiscordComponentMessage(
 
   return {
     messageId: result.id ?? "unknown",
+    channelId: result.channel_id ?? channelId,
+  };
+}
+
+export async function editDiscordComponentMessage(
+  to: string,
+  messageId: string,
+  spec: DiscordComponentMessageSpec,
+  opts: DiscordComponentSendOpts = {},
+): Promise<DiscordSendResult> {
+  const cfg = opts.cfg ?? loadConfig();
+  const accountInfo = resolveDiscordAccount({ cfg, accountId: opts.accountId });
+  const { token, rest, request } = createDiscordClient(opts, cfg);
+  const recipient = await parseAndResolveRecipient(to, opts.accountId, cfg);
+  const { channelId } = await resolveChannelId(rest, recipient, request);
+  const { body, buildResult } = await buildDiscordComponentPayload({
+    spec,
+    opts,
+    accountId: accountInfo.accountId,
+  });
+
+  let result: { id: string; channel_id: string };
+  try {
+    result = (await request(
+      () =>
+        rest.patch(Routes.channelMessage(channelId, messageId), {
+          body,
+        }) as Promise<{ id: string; channel_id: string }>,
+      "components",
+    )) as { id: string; channel_id: string };
+  } catch (err) {
+    throw await buildDiscordSendError(err, {
+      channelId,
+      rest,
+      token,
+      hasMedia: Boolean(opts.mediaUrl),
+    });
+  }
+
+  registerBuiltDiscordComponentMessage({
+    buildResult,
+    messageId: result.id ?? messageId,
+  });
+
+  recordChannelActivity({
+    channel: "discord",
+    accountId: accountInfo.accountId,
+    direction: "outbound",
+  });
+
+  return {
+    messageId: result.id ?? messageId,
     channelId: result.channel_id ?? channelId,
   };
 }
