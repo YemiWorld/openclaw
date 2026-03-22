@@ -36,7 +36,6 @@ export const BUNDLED_ENABLED_BY_DEFAULT = new Set<string>([
   "device-pair",
   "github-copilot",
   "google",
-  "huggingface",
   "kilocode",
   "kimi",
   "minimax",

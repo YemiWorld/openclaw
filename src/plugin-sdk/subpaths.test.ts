@@ -569,7 +569,6 @@ describe("plugin-sdk subpath exports", () => {
   it("keeps provider models focused on shared provider primitives", () => {
     expect(typeof providerModelsSdk.applyOpenAIConfig).toBe("function");
     expect(typeof providerModelsSdk.buildKilocodeModelDefinition).toBe("function");
-    expect(typeof providerModelsSdk.discoverHuggingfaceModels).toBe("function");
     expect("buildMinimaxModelDefinition" in asExports(providerModelsSdk)).toBe(false);
     expect("buildMoonshotProvider" in asExports(providerModelsSdk)).toBe(false);
     expect("QIANFAN_BASE_URL" in asExports(providerModelsSdk)).toBe(false);

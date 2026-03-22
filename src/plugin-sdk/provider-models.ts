@@ -47,12 +47,6 @@ export {
   resolveCloudflareAiGatewayBaseUrl,
 } from "../agents/cloudflare-ai-gateway.js";
 export { resolveAnthropicVertexRegion } from "../agents/anthropic-vertex-provider.js";
-export {
-  discoverHuggingfaceModels,
-  HUGGINGFACE_BASE_URL,
-  HUGGINGFACE_MODEL_CATALOG,
-  buildHuggingfaceModelDefinition,
-} from "../agents/huggingface-models.js";
 export { discoverKilocodeModels } from "../agents/kilocode-models.js";
 export {
   buildChutesModelDefinition,

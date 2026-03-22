@@ -8,7 +8,6 @@ import elevenLabsPlugin from "../../../extensions/elevenlabs/index.js";
 import falPlugin from "../../../extensions/fal/index.js";
 import githubCopilotPlugin from "../../../extensions/github-copilot/index.js";
 import googlePlugin from "../../../extensions/google/index.js";
-import huggingFacePlugin from "../../../extensions/huggingface/index.js";
 import kilocodePlugin from "../../../extensions/kilocode/index.js";
 import kimiCodingPlugin from "../../../extensions/kimi-coding/index.js";
 import microsoftPlugin from "../../../extensions/microsoft/index.js";
@@ -356,7 +355,6 @@ const bundledProviderPlugins = dedupePlugins([
   githubCopilotPlugin,
   falPlugin,
   googlePlugin,
-  huggingFacePlugin,
   kilocodePlugin,
   kimiCodingPlugin,
   minimaxPlugin,

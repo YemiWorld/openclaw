@@ -5,7 +5,6 @@ import anthropicPlugin from "../../extensions/anthropic/index.js";
 import chutesPlugin from "../../extensions/chutes/index.js";
 import cloudflareAiGatewayPlugin from "../../extensions/cloudflare-ai-gateway/index.js";
 import googlePlugin from "../../extensions/google/index.js";
-import huggingfacePlugin from "../../extensions/huggingface/index.js";
 import kimiCodingPlugin from "../../extensions/kimi-coding/index.js";
 import minimaxPlugin from "../../extensions/minimax/index.js";
 import mistralPlugin from "../../extensions/mistral/index.js";
@@ -88,7 +87,6 @@ function createDefaultProviderPlugins() {
     chutesPlugin,
     cloudflareAiGatewayPlugin,
     googlePlugin,
-    huggingfacePlugin,
     kimiCodingPlugin,
     minimaxPlugin,
     mistralPlugin,
@@ -307,11 +305,7 @@ describe("applyAuthChoice", () => {
 
   it("prompts and writes provider API key for common providers", async () => {
     const scenarios: Array<{
-      authChoice:
-        | "minimax-global-api"
-        | "minimax-cn-api"
-        | "synthetic-api-key"
-        | "huggingface-api-key";
+      authChoice: "minimax-global-api" | "minimax-cn-api" | "synthetic-api-key";
       promptContains: string;
       profileId: string;
       provider: string;
@@ -340,14 +334,6 @@ describe("applyAuthChoice", () => {
         profileId: "synthetic:default",
         provider: "synthetic",
         token: "sk-synthetic-test",
-      },
-      {
-        authChoice: "huggingface-api-key" as const,
-        promptContains: "Hugging Face",
-        profileId: "huggingface:default",
-        provider: "huggingface",
-        token: "hf-test-token",
-        expectedModelPrefix: "huggingface/",
       },
     ];
     for (const scenario of scenarios) {
@@ -501,13 +487,6 @@ describe("applyAuthChoice", () => {
       expectedModel?: string;
       expectedModelPrefix?: string;
     }> = [
-      {
-        tokenProvider: "huggingface",
-        token: "hf-token-provider-test",
-        profileId: "huggingface:default",
-        provider: "huggingface",
-        expectedModelPrefix: "huggingface/",
-      },
       {
         tokenProvider: "  ToGeThEr  ",
         token: "sk-together-token-provider-test",
