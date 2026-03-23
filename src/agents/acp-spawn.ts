@@ -804,14 +804,17 @@ export async function spawnAcpDirect(
       timeoutMs: 10_000,
     });
     sessionCreated = true;
+    // Apply per-agent model override to config if specified
+    const runtimeCfg = params.model
+      ? { ...cfg, models: { ...cfg.models, primary: params.model } }
+      : cfg;
     const initializedSession = await initializeAcpSpawnRuntime({
-      cfg,
+      cfg: runtimeCfg,
       sessionKey,
       targetAgentId,
       runtimeMode,
       resumeSessionId: params.resumeSessionId,
       cwd: params.cwd,
-      model: params.model,
     });
     initializedRuntime = initializedSession.runtimeCloseHandle;
 

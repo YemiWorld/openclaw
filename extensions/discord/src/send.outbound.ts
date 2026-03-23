@@ -62,8 +62,6 @@ type DiscordSendOpts = {
   buffer?: Buffer | string;
   /** MIME content type for buffer-based attachments. */
   contentType?: string;
-  /** Filename for buffer-based attachments. */
-  filename?: string;
 };
 
 type DiscordClientRequest = ReturnType<typeof createDiscordClient>["request"];
