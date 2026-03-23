@@ -1,4 +1,6 @@
 import { createInterface } from "node:readline";
+import { homedir } from "node:os";
+import { join as pathJoin } from "node:path";
 import type {
   AcpRuntimeCapabilities,
   AcpRuntimeDoctorReport,
@@ -207,6 +209,18 @@ export class AcpxRuntime implements AcpRuntime {
     );
   }
 
+  /**
+   * Per-agent env overrides — allows hardwiring different Claude settings dirs
+   * so that e.g. "claude-opus" reads ~/.claude-opus/settings.json (model=opus)
+   * while the default "claude" reads ~/.claude/settings.json (model=sonnet).
+   */
+  private resolveAgentExtraEnv(agent: string): Record<string, string> | undefined {
+    if (agent === "claude-opus") {
+      return { CLAUDE_CONFIG_DIR: pathJoin(homedir(), ".claude-opus") };
+    }
+    return undefined;
+  }
+
   private async checkVersion(): Promise<AcpxVersionCheckResult> {
     return await checkAcpxVersion({
       command: this.config.command,
@@ -296,6 +310,7 @@ export class AcpxRuntime implements AcpRuntime {
       }),
       cwd: params.cwd,
       fallbackCode: "ACP_SESSION_INIT_FAILED",
+      extraEnv: this.resolveAgentExtraEnv(params.agent),
     });
   }
 
@@ -316,6 +331,7 @@ export class AcpxRuntime implements AcpRuntime {
         cwd: params.cwd,
         fallbackCode: "ACP_SESSION_INIT_FAILED",
         ignoreNoSession: true,
+        extraEnv: this.resolveAgentExtraEnv(params.agent),
       });
     } catch (error) {
       this.logger?.warn?.(
@@ -369,6 +385,7 @@ export class AcpxRuntime implements AcpRuntime {
         cwd: params.cwd,
         fallbackCode: "ACP_SESSION_INIT_FAILED",
         ignoreNoSession: true,
+        extraEnv: this.resolveAgentExtraEnv(params.agent),
       });
     } catch (statusError) {
       this.logger?.warn?.(
@@ -442,6 +459,7 @@ export class AcpxRuntime implements AcpRuntime {
           }),
           cwd,
           fallbackCode: "ACP_SESSION_INIT_FAILED",
+          extraEnv: this.resolveAgentExtraEnv(agent),
         });
       } catch (error) {
         const recovered = await this.recoverEnsureFailure({
@@ -565,6 +583,7 @@ export class AcpxRuntime implements AcpRuntime {
         args,
         cwd: state.cwd,
         stripProviderAuthEnvVars: this.config.stripProviderAuthEnvVars,
+        extraEnv: this.resolveAgentExtraEnv(state.agent),
       },
       this.spawnCommandOptions,
     );
@@ -676,6 +695,7 @@ export class AcpxRuntime implements AcpRuntime {
       fallbackCode: "ACP_TURN_FAILED",
       ignoreNoSession: true,
       signal: input.signal,
+      extraEnv: this.resolveAgentExtraEnv(state.agent),
     });
     const detail = events.find((event) => !toAcpxErrorEvent(event)) ?? events[0];
     if (!detail) {
@@ -720,6 +740,7 @@ export class AcpxRuntime implements AcpRuntime {
       args,
       cwd: state.cwd,
       fallbackCode: "ACP_TURN_FAILED",
+      extraEnv: this.resolveAgentExtraEnv(state.agent),
     });
   }
 
@@ -743,6 +764,7 @@ export class AcpxRuntime implements AcpRuntime {
       args,
       cwd: state.cwd,
       fallbackCode: "ACP_TURN_FAILED",
+      extraEnv: this.resolveAgentExtraEnv(state.agent),
     });
   }
 
@@ -833,6 +855,7 @@ export class AcpxRuntime implements AcpRuntime {
       cwd: state.cwd,
       fallbackCode: "ACP_TURN_FAILED",
       ignoreNoSession: true,
+      extraEnv: this.resolveAgentExtraEnv(state.agent),
     });
   }
 
@@ -848,6 +871,7 @@ export class AcpxRuntime implements AcpRuntime {
       cwd: state.cwd,
       fallbackCode: "ACP_TURN_FAILED",
       ignoreNoSession: true,
+      extraEnv: this.resolveAgentExtraEnv(state.agent),
     });
   }
 
@@ -950,6 +974,7 @@ export class AcpxRuntime implements AcpRuntime {
     fallbackCode: AcpRuntimeErrorCode;
     ignoreNoSession?: boolean;
     signal?: AbortSignal;
+    extraEnv?: Record<string, string>;
   }): Promise<AcpxJsonObject[]> {
     const result = await spawnAndCollect(
       {
@@ -957,6 +982,7 @@ export class AcpxRuntime implements AcpRuntime {
         args: params.args,
         cwd: params.cwd,
         stripProviderAuthEnvVars: this.config.stripProviderAuthEnvVars,
+        extraEnv: params.extraEnv,
       },
       this.spawnCommandOptions,
       {
