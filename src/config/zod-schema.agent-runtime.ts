@@ -423,6 +423,7 @@ const ToolExecBaseShape = {
   node: z.string().optional(),
   pathPrepend: z.array(z.string()).optional(),
   safeBins: z.array(z.string()).optional(),
+  strictInlineEval: z.boolean().optional(),
   safeBinTrustedDirs: z.array(z.string()).optional(),
   safeBinProfiles: z.record(z.string(), ToolExecSafeBinProfileSchema).optional(),
   backgroundMs: z.number().int().positive().optional(),
@@ -768,6 +769,11 @@ export const AgentEntrySchema = z
     agentDir: z.string().optional(),
     dispatchDir: z.string().optional(),
     model: AgentModelSchema.optional(),
+    thinkingDefault: z
+      .enum(["off", "minimal", "low", "medium", "high", "xhigh", "adaptive"])
+      .optional(),
+    reasoningDefault: z.enum(["on", "off", "stream"]).optional(),
+    fastModeDefault: z.boolean().optional(),
     skills: z.array(z.string()).optional(),
     memorySearch: MemorySearchSchema,
     humanDelay: HumanDelaySchema.optional(),

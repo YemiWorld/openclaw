@@ -49,6 +49,7 @@ type DiscordSendOpts = {
   token?: string;
   accountId?: string;
   mediaUrl?: string;
+  filename?: string;
   mediaLocalRoots?: readonly string[];
   verbose?: boolean;
   rest?: RequestClient;
@@ -241,6 +242,7 @@ export async function sendMessageDiscord(
             threadId,
             mediaCaption ?? "",
             opts.mediaUrl!,
+            opts.filename,
             opts.mediaLocalRoots,
             mediaMaxBytes,
             undefined,
@@ -323,6 +325,7 @@ export async function sendMessageDiscord(
           channelId,
           textWithMentions,
           opts.mediaUrl!,
+          opts.filename,
           opts.mediaLocalRoots,
           mediaMaxBytes,
           opts.replyTo,

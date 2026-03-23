@@ -1,15 +1,15 @@
-import {
-  inspectTelegramAccount,
-  isNumericTelegramUserId,
-  listTelegramAccountIds,
-  lookupTelegramChatId,
-  normalizeTelegramAllowFromEntry,
-} from "../../../../extensions/telegram/api.js";
 import { resolveCommandSecretRefsViaGateway } from "../../../cli/command-secret-gateway.js";
 import { getChannelsCommandSecretTargetIds } from "../../../cli/command-secret-targets.js";
 import type { OpenClawConfig } from "../../../config/config.js";
 import type { TelegramNetworkConfig } from "../../../config/types.telegram.js";
 import { resolveTelegramAccount } from "../../../plugin-sdk/account-resolution.js";
+import {
+  isNumericTelegramUserId,
+  normalizeTelegramAllowFromEntry,
+  inspectTelegramAccount,
+  listTelegramAccountIds,
+  lookupTelegramChatId,
+} from "../../../plugin-sdk/telegram.js";
 import { describeUnknownError } from "../../../secrets/shared.js";
 import { sanitizeForLog } from "../../../terminal/ansi.js";
 import { hasAllowFromEntries } from "../shared/allowlist.js";

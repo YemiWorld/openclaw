@@ -67,6 +67,12 @@ export type AgentConfig = {
   /** Optional path to a judah-dispatch node directory for per-agent bootstrap context. */
   dispatchDir?: string;
   model?: AgentModelConfig;
+  /** Optional per-agent default thinking level (overrides agents.defaults.thinkingDefault). */
+  thinkingDefault?: "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "adaptive";
+  /** Optional per-agent default reasoning visibility. */
+  reasoningDefault?: "on" | "off" | "stream";
+  /** Optional per-agent default for fast mode. */
+  fastModeDefault?: boolean;
   /** Optional allowlist of skills for this agent (omit = all skills; empty = none). */
   skills?: string[];
   memorySearch?: MemorySearchConfig;
