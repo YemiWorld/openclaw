@@ -122,6 +122,20 @@ export async function runCli(argv: string[] = process.argv) {
     installUnhandledRejectionHandler();
 
     process.on("uncaughtException", (error) => {
+      const msg = error instanceof Error ? error.message : String(error);
+      // Transient network errors from Discord/WebSocket — log and continue, don't crash
+      const isTransient =
+        msg.includes("ECONNRESET") ||
+        msg.includes("ECONNREFUSED") ||
+        msg.includes("ETIMEDOUT") ||
+        msg.includes("EPIPE") ||
+        msg.includes("Max reconnect attempts") ||
+        msg.includes("This operation was aborted") ||
+        msg.includes("fetch failed");
+      if (isTransient) {
+        console.error("[openclaw] Transient error (not crashing):", formatUncaughtError(error));
+        return;
+      }
       console.error("[openclaw] Uncaught exception:", formatUncaughtError(error));
       process.exit(1);
     });
