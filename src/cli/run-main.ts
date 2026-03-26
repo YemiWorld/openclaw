@@ -131,7 +131,10 @@ export async function runCli(argv: string[] = process.argv) {
         msg.includes("EPIPE") ||
         msg.includes("Max reconnect attempts") ||
         msg.includes("This operation was aborted") ||
-        msg.includes("fetch failed");
+        msg.includes("fetch failed") ||
+        msg.includes("socket hang up") ||
+        msg.includes("ENOTFOUND") ||
+        msg.includes("EAI_AGAIN");
       if (isTransient) {
         console.error("[openclaw] Transient error (not crashing):", formatUncaughtError(error));
         return;
